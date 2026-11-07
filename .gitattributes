@@ -1,0 +1,15 @@
+# NX 的菜单/功能区/工具栏文件是 GBK 编码的文本，必须按二进制处理，
+# 否则换行转换会在 checkout 时改变字节内容（NX 对这类文件很敏感）。
+*.men  -text
+*.rtb  -text
+*.grb  -text
+*.dlx  -text
+
+# 图片与二进制资源
+*.bmp  -text
+*.ico  -text
+*.png  -text
+*.prt  -text
+*.xlsx -text
+*.zip  -text
+*.exe  -text

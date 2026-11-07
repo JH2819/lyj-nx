@@ -1,0 +1,74 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7E2A9C41-6B3D-4F8E-9A15-0C8D52E7F3B6}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>LYJ</RootNamespace>
+    <AssemblyName>LYJ</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <!-- NX 安装根目录：优先环境变量 NX_BASE_DIR；也可在本目录放一份 NXBaseDir.local.props
+         （已加入 .gitignore）覆盖，仅供本机开发使用。仓库内不写死任何机器路径。 -->
+    <NXBaseDir Condition="'$(NX_BASE_DIR)' != ''">$(NX_BASE_DIR)</NXBaseDir>
+  </PropertyGroup>
+  <Import Project="$(MSBuildProjectDirectory)\NXBaseDir.local.props" Condition="Exists('$(MSBuildProjectDirectory)\NXBaseDir.local.props')" />
+  <PropertyGroup>
+    <NXManagedDir>$(NXBaseDir)\NXBIN\managed</NXManagedDir>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="NXOpen">
+      <HintPath>$(NXManagedDir)\NXOpen.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="NXOpenUI">
+      <HintPath>$(NXManagedDir)\NXOpenUI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="NXOpen.Utilities">
+      <HintPath>$(NXManagedDir)\NXOpen.Utilities.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="NXOpen.UF">
+      <HintPath>$(NXManagedDir)\NXOpen.UF.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="LYJ.cs" />
+    <Compile Include="MachAssistantForm.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+
+  <!-- 缺少 NX 托管程序集时给出可操作的报错，而不是一串找不到引用的编译错误。 -->
+  <Target Name="CheckNXManagedDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(NXManagedDir)\NXOpen.dll')"
+           Text="找不到 NX 托管程序集：$(NXManagedDir)\NXOpen.dll。请设置环境变量 NX_BASE_DIR 指向 NX 安装根目录（例如 D:\Program Files\Siemens\DC 2606），或在 LYJ\NXBaseDir.local.props 中定义 NXBaseDir。" />
+  </Target>
+</Project>

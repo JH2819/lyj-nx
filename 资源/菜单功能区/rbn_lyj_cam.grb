@@ -1,0 +1,8 @@
+TITLE 加工
+
+VERSION 170
+
+BUTTON LYJ_APP__cam_assistant
+LABEL 加工助手
+BITMAP lyj_cam_assistant
+RIBBON_STYLE ALWAYS_LARGE_IMAGE

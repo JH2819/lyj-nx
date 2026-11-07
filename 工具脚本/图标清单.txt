@@ -1,0 +1,10 @@
+# LYJ 功能区固定按钮图标清单（文件名<TAB>文字）
+lyj_cam_assistant	加工|助手
+lyj_import_stl	导入|STL
+lyj_import_stp	导入|STP
+lyj_import_igs	导入|IGS
+lyj_import_xt	导入|X_T
+lyj_export_stl	导出|STL
+lyj_export_stp	导出|STP
+lyj_export_igs	导出|IGS
+lyj_export_xt	导出|X_T

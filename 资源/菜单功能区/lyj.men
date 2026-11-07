@@ -1,0 +1,85 @@
+VERSION 120
+
+EDIT UG_GATEWAY_MAIN_MENUBAR
+
+MENU UG_APPLICATION
+
+    APPLICATION_BUTTON LYJ_APP
+
+    LABEL LYJ
+
+    LIBRARIES LYJ
+
+END_OF_MENU
+
+AFTER UG_HELP
+
+    CASCADE_BUTTON LYJ_MENU
+
+    LABEL LYJ
+
+END_OF_AFTER
+
+MENU LYJ_MENU
+
+    CASCADE_BUTTON LYJ_IMPORT_MENU
+
+    LABEL 图档导入
+
+    CASCADE_BUTTON LYJ_EXPORT_MENU
+
+    LABEL 图档导出
+
+    BUTTON LYJ_APP__cam_assistant
+    LABEL 加工助手
+    BITMAP lyj_cam_assistant
+    ACTIONS LYJ_APP__cam_assistant
+END_OF_MENU
+
+MENU LYJ_IMPORT_MENU
+
+    BUTTON LYJ_APP__import_stl
+    LABEL 导入STL
+    BITMAP lyj_import_stl
+    ACTIONS LYJ_APP__import_stl
+
+    BUTTON LYJ_APP__import_stp
+    LABEL 导入STP/STEP
+    BITMAP lyj_import_stp
+    ACTIONS LYJ_APP__import_stp
+
+    BUTTON LYJ_APP__import_igs
+    LABEL 导入IGS
+    BITMAP lyj_import_igs
+    ACTIONS LYJ_APP__import_igs
+
+    BUTTON LYJ_APP__import_xt
+    LABEL 导入X_T
+    BITMAP lyj_import_xt
+    ACTIONS LYJ_APP__import_xt
+
+END_OF_MENU
+
+MENU LYJ_EXPORT_MENU
+
+    BUTTON LYJ_APP__export_stl
+    LABEL 导出STL
+    BITMAP lyj_export_stl
+    ACTIONS LYJ_APP__export_stl
+
+    BUTTON LYJ_APP__export_stp
+    LABEL 导出STP/STEP
+    BITMAP lyj_export_stp
+    ACTIONS LYJ_APP__export_stp
+
+    BUTTON LYJ_APP__export_igs
+    LABEL 导出IGS
+    BITMAP lyj_export_igs
+    ACTIONS LYJ_APP__export_igs
+
+    BUTTON LYJ_APP__export_xt
+    LABEL 导出X_T
+    BITMAP lyj_export_xt
+    ACTIONS LYJ_APP__export_xt
+
+END_OF_MENU

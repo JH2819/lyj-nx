@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>LYJ安装程序</AssemblyName>
+    <RootNamespace>NxToolboxSetup</RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <OutputPath>bin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyVersion>1.0.1105.0</AssemblyVersion>
+    <FileVersion>1.0.1105.0</FileVersion>
+    <Version>1.0.1105</Version>
+    <Company>LYJ</Company>
+    <Product>LYJ</Product>
+    <AssemblyTitle>LYJ安装程序</AssemblyTitle>
+    <!-- 安装程序图标（exe 图标 + 窗口/任务栏默认图标）。由 工具脚本\gen_icon.py
+         纯代码绘制生成（无第三方素材），多尺寸 16~256。 -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="MainForm.cs" />
+    <Compile Include="SetupCore.cs" />
+    <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" />
+  </ItemGroup>
+</Project>
