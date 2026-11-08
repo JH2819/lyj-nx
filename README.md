@@ -16,9 +16,13 @@
 | **加工模板同步** | 扫描模板 prt 生成工序清单与按钮图标，模板一改自动重建 |
 
 <p align="center">
-  <img src="文档/截图/01-overview.png" width="840" alt="LYJ 功能区与加工助手悬浮窗">
+  <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/01-overview.png">
+    <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/01-overview.png" width="840" alt="LYJ 功能区与加工助手悬浮窗">
+  </a>
   <br>
   <sub>功能区「LYJ」选项卡 · 加工助手悬浮窗（参数页，35 项实时回读）</sub>
+  <br>
+  <sub><i>图片走 jsDelivr CDN 显示；若仍加载不出，点图片可打开仓库中的原图。</i></sub>
 </p>
 
 > [!WARNING]
@@ -98,7 +102,9 @@
 **两个页签** — 「参数」页是上面那张表；「模板」页是树形列出的模板工序，**双击即插入**当前程序组。
 
 <p align="center">
-  <img src="文档/截图/02-template-tree.png" width="340" alt="加工助手 - 模板页">
+  <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/02-template-tree.png">
+    <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/02-template-tree.png" width="340" alt="加工助手 - 模板页">
+  </a>
   <br>
   <sub>「模板」页：按模板的程序树列出工序，双击插入</sub>
 </p>
@@ -107,7 +113,7 @@
 
 | 模板页配置 | 参数页配置 |
 | :---: | :---: |
-| <img src="文档/截图/03-assistant-config.png" width="430" alt="模板配置"> | <img src="文档/截图/04-param-config.png" width="430" alt="参数配置"> |
+| <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/03-assistant-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/03-assistant-config.png" width="430" alt="模板配置"></a> | <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/04-param-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/04-param-config.png" width="430" alt="参数配置"></a> |
 | 多模板路径管理（`cam_template.txt` 的可视化编辑） | 字体 / 字号 / 显示哪些行 / 行顺序 / 颜色 |
 
 ### 3.3 加工模板同步
