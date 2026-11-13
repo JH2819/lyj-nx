@@ -133,12 +133,22 @@ namespace LYJ
 
         /// <summary>
         /// 停靠时相对图形区顶边额外让出的像素（96 DPI 基准，实际按 DPI 缩放）。
-        /// 默认 0 —— 窗口紧贴图形区顶边，视觉上和图形区上沿只差 12px 边距。
-        /// 只有个别机器上 NX 把“文档标签栏”画在图形区里面、把悬浮窗标题盖住时，
-        /// 才需要把这个值调大（例如 dock_gap=36），配置写在
+        /// **0 = 自动**（推荐）：先看能不能抓到屏幕上的顶层横条（工具条 / 文档标签栏），
+        /// 抓到就精确让到它下沿；抓不到（标签栏是 NX 自绘的，多数机器如此）就按
+        /// <see cref="AutoDockGap"/> 让一档 —— 因为 NX 会把“文档标签栏”叠画在图形区最
+        /// 上面 20~30px 里，不让开会把悬浮窗的标题（加工助手 / 模板 / 加工参数）压到
+        /// 部件名标签上，看起来像"挡住了工作区标题"。
+        /// 想更贴顶就填一个小数字（例如 dock_gap=6），配置写在
         /// %APPDATA%\LYJ\mach_assistant.cfg。
         /// </summary>
         public static int DockGap = 0;
+
+        /// <summary>
+        /// dock_gap=0（自动）且抓不到标签栏时的兜底让位，96 DPI 基准。
+        /// 取 24：实测 NX 2606 的文档标签栏约 30px 高、叠进图形区上沿约 21px，
+        /// 让 24 之后悬浮窗标题正好落在标签栏下沿再空出十几个像素，既不压字也不显空。
+        /// </summary>
+        public const int AutoDockGap = 24;
 
         public static bool IsHidden(string row) { return HiddenRows.Contains(row); }
 
@@ -252,8 +262,8 @@ namespace LYJ
                 lines.Add("rowset=" + RowSetVersion);
                 lines.Add("order=" + string.Join(",", RowOrder.ToArray()));
                 lines.Add("hidden=" + string.Join(",", HiddenRows.ToArray()));
-                // 停靠下移量：默认 0（紧贴图形区顶边）。只有标题被 NX 标签栏盖住时才需要调大。
-                lines.Add("# dock_gap：窗口相对图形区顶边额外下移的像素，默认 0；标题被标签栏盖住时改成 36");
+                // 停靠下移量：0 = 自动（躲开 NX 的文档标签栏，推荐）；正数 = 手工指定像素。
+                lines.Add("# dock_gap：0=自动（默认，躲开 NX 的文档标签栏）；填像素数可手动微调（如 6 更贴顶、36 更靠下）");
                 lines.Add("dock_gap=" + DockGap);
                 foreach (string id in AllRows)
                     if (RowColors.ContainsKey(id))
@@ -5102,39 +5112,50 @@ namespace LYJ
                 {
                     int w = rr.Right - rr.Left, h = rr.Bottom - rr.Top;
 
-                    // 顶边修正：图形视口有时会把顶部的“文档标签栏 / 工具条”整条包进来
-                    // （顶边 = 客户区顶边），直接按它定位会让悬浮窗标题压到标签栏上。
-                    // 做法：找“位于客户区顶部、横向成条、高度不到视口 1/3”的子窗口
-                    // （不看它挂在谁下面，EnumChildWindows 是递归的），把顶边下移到它们下沿。
+                    // 顶边修正：视口上方常压着“工具条 / 文档标签栏”这类横条，
+                    // 直接按视口顶边停靠会把悬浮窗的标题（加工助手 / 模板 / 加工参数）
+                    // 压到部件名标签上，看起来就是“挡住了工作区标题”。
+                    //
+                    // 搜索窗以**视口顶边**为基准（±80）。以前以客户区顶边为基准，
+                    // 只能覆盖“视口把功能区整条包进来”的情况；而更常见的是
+                    // “文档标签栏叠在视口最上面 20~30px”，那时标签栏的 Top 离客户区顶边
+                    // 有上百像素，被这条 ±60 的窗口直接漏掉 —— 2026-11-13 又踩到。
                     int top = rr.Top;
-                    int topRef = (cTop != int.MinValue && cTop < top) ? cTop : top;
+                    int stripLo = rr.Top - 80, stripHi = rr.Top + 80;
                     int stripMaxH = Math.Max(30, h / 3);
                     foreach (RECT r in all)
                     {
                         int rw = r.Right - r.Left, rh = r.Bottom - r.Top;
                         if (rw <= 0 || rh <= 0) continue;
-                        if (r.Top < topRef - 4 || r.Top > topRef + 60) continue;   // 不在顶部区域
+                        if (r.Top < stripLo || r.Top > stripHi) continue;           // 不在视口顶部区域
                         if (rw < w / 3) continue;                                  // 太窄，不是横条
                         if (rh > stripMaxH) continue;                              // 太高，是视口本身
                         if (r.Right <= rr.Left || r.Left >= rr.Right) continue;    // 与视口不重叠
-                        if (r.Left < (cLeft == int.MinValue ? rr.Left : cLeft) - 4) continue;
+                        // 左侧停靠面板（工序导航器）也从客户区左边起，但它的右沿离视口右沿还远，
+                        // 必须排除；而“通栏的功能区 / 文档标签栏”（视口把整条功能区一起包进来时）
+                        // 右沿会一直伸到视口右边，得保留。所以只在“左边在外面、右边也没到”时才丢。
+                        if (r.Left < rr.Left - 4 && r.Right < rr.Right - 40) continue;
                         if (r.Bottom > top) top = r.Bottom;
                     }
-                    // 几何下限（相对视口自身顶边）：个别机器上 NX 会把文档标签栏一起画进
-                    // 图形视口（顶边 = 标签栏顶边，标签栏自绘、抓不到 HWND），此时悬浮窗标题
-                    // 会被标签栏盖住 —— 这种机器用配置项 dock_gap 手工让开（默认 0）。
-                    // 绝大多数机器视口顶边本来就在标签栏下面，再让一次只会多出一条空白带，
-                    // 所以默认不让（v3.18 起；之前硬编码 36*DPI 导致顶部空得太宽）。
-                    int tabGuess = MachAssistantConfig.DockGap * DeviceDpi / 96;
-                    if (tabGuess > 0 && top < rr.Top + tabGuess && rr.Bottom - (rr.Top + tabGuess) > 120)
-                        top = rr.Top + tabGuess;
+                    int stripInset = top - rr.Top;     // 抓到的标签栏/横条厚度，0 = 没抓到
+
+                    // 抓不到时按经验让一档：NX 的文档标签栏是**自绘**的（没有 HWND，
+                    // EnumChildWindows 看不到），实测 2606 上它压在图形区上沿 20~30px。
+                    // dock_gap = 0 → 自动（用 AutoDockGap）；>0 → 用手工给的像素。
+                    int gap = MachAssistantConfig.DockGap;
+                    int gapPx = gap > 0 ? gap * DeviceDpi / 96
+                                        : (stripInset > 0 ? 0 : MachAssistantConfig.AutoDockGap * DeviceDpi / 96);
+                    if (gapPx > 0 && rr.Bottom - (rr.Top + gapPx) > 120)
+                        top = Math.Max(top, Math.Min(rr.Top + gapPx, rr.Top + 120));
 
                     Rectangle result;
                     if (top > rr.Top && rr.Bottom - top > 120)
                         result = new Rectangle(rr.Left, top, w, rr.Bottom - top);
                     else
                         result = new Rectangle(rr.Left, rr.Top, w, h);
-                    DumpAnchor(result, rr, top, cLeft, cTop, cRight, cBottom, all);
+                    DumpAnchor(result, rr, top, cLeft, cTop, cRight, cBottom, all,
+                        "让位 " + (top - rr.Top) + "px（" + (stripInset > 0 ? "抓到横条" :
+                        (gap > 0 ? "手填 dock_gap=" + gap : "自动兜底 " + MachAssistantConfig.AutoDockGap)) + "）");
                     return result;
                 }
 
@@ -5190,7 +5211,7 @@ namespace LYJ
 
         /// <summary>锚点结果变化时追加一段诊断日志（同一结果只记一次），方便排查“停靠位置不对”。</summary>
         private void DumpAnchor(Rectangle a, RECT viewport, int topAfterFix,
-            int cLeft, int cTop, int cRight, int cBottom, List<RECT> all)
+            int cLeft, int cTop, int cRight, int cBottom, List<RECT> all, string gapNote = null)
         {
             if (_anchorDumped && a == _anchorLastDump) return;
             _anchorDumped = true;
@@ -5210,14 +5231,15 @@ namespace LYJ
                 {
                     sb.AppendLine("视口原始矩形: L" + viewport.Left + " T" + viewport.Top +
                         " R" + viewport.Right + " B" + viewport.Bottom);
-                    sb.AppendLine("顶边修正后: " + topAfterFix);
+                    sb.AppendLine("顶边修正后: " + topAfterFix +
+                        (string.IsNullOrEmpty(gapNote) ? "" : "   [" + gapNote + "]"));
                 }
                 sb.AppendLine("锚点结果: L" + a.Left + " T" + a.Top + " W" + a.Width + " H" + a.Height);
-                sb.AppendLine("子窗口矩形（最多 60 个）:");
+                sb.AppendLine("子窗口矩形（最多 120 个）:");
                 int n = 0;
                 foreach (RECT r in all)
                 {
-                    if (n++ >= 60) break;
+                    if (n++ >= 120) break;
                     sb.AppendLine("  L" + r.Left + " T" + r.Top + " R" + r.Right + " B" + r.Bottom);
                 }
                 string logPath = System.IO.Path.Combine(dir, "anchor.log");

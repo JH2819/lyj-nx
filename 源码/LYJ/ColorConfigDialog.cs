@@ -170,15 +170,16 @@ namespace LYJ
                 }
 
                 cfg.Save();
-                ColorSlots.WriteAllIcons(cfg);
+                ColorSlots.WriteAllIcons(cfg, true);   // 保存时顺手清掉旧指纹的图标
                 LYJApp.RebuildDisplayGroup();
 
                 UI.GetUI().NXMessageBox.Show("显示组配置", NXMessageBox.DialogType.Information,
                     "已保存，共 " + ready + " 个颜色按钮可用。\r\n\r\n" +
-                    "✔ 新颜色**立刻可用**：回到图形区选中对象，点颜色按钮就是新颜色（不需要重启）。\r\n" +
-                    "· 按钮上那颗小色块是 NX 启动时读的图，颜色要到下次启动 NX 才刷新。\r\n" +
-                    "· 勾上的按钮才有颜色，没勾的画成「＋」空位。\r\n\r\n" +
-                    "配置也可以直接用记事本改：\r\n" + ColorSlots.CfgFile);
+                    "【立刻生效】上色：选中对象后点颜色按钮，用的就是这里的颜色，不用重启。\r\n" +
+                    "【要重启 NX】按钮上那排小色块：功能区图标是位图，NX 只在启动时读一次，\r\n" +
+                    "重启后才会和这里的颜色一一对应。\r\n\r\n" +
+                    "· 勾上的按钮才有颜色，没勾的画成「＋」空位。\r\n" +
+                    "· 配置也可以直接用记事本改：\r\n" + ColorSlots.CfgFile);
             }
             catch (Exception ex)
             {

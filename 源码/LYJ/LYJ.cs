@@ -1709,6 +1709,10 @@ namespace LYJ
             var sb = new StringBuilder();
             sb.Append("TITLE 显示\n\nVERSION 170\n");
 
+            // 槽图标的文件名带「配置指纹」：NX 按 BITMAP 名字缓存位图，
+            // 名字不变时改了颜色也可能一直用旧图（配置页和按钮对不上就是这个原因）。
+            string suffix = ColorSlots.IconSuffix(cfg);
+
             if (cfg.ShowTransparency)
                 AppendIconButton(sb, "LYJ_APP__transparency", "透明化", "lyj_transparency");
 
@@ -1719,7 +1723,7 @@ namespace LYJ
                 string label = ready
                     ? (string.IsNullOrEmpty(s.Name) ? ("颜色 " + (i + 1)) : s.Name)
                     : ("颜色 " + (i + 1) + "（未配置）");
-                AppendIconButton(sb, ColorActionId(i), label, ColorSlots.IconName(i));
+                AppendIconButton(sb, ColorActionId(i), label, ColorSlots.IconName(i, suffix));
             }
 
             AppendIconButton(sb, "LYJ_APP__color_config", "配置颜色按钮", "lyj_color_config");
@@ -2059,6 +2063,10 @@ namespace LYJ
                     string p = Path.Combine(CamAppDir, stale + ".bmp");
                     if (File.Exists(p)) File.Delete(p);
                 }
+
+                // 无指纹的旧槽图标（lyj_color_01.bmp…）不在这里删：
+                // 本次启动 NX 读的可能是上一次写的 .grb（引用的就是这些名字），
+                // 删早了会让按钮变空白。它们会在下次保存配置时由 WriteAllIcons(cleanup:true) 清掉。
             }
             catch { }
         }

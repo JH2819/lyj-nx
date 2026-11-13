@@ -136,10 +136,42 @@ namespace LYJ
             get { return Path.Combine(LYJApp.CfgDir, "color_slots.txt"); }
         }
 
-        /// <summary>第 index（0 起）颗按钮的图标名（不带扩展名）。</summary>
+        /// <summary>第 index（0 起）颗按钮的图标名（不带扩展名，无指纹）。</summary>
         internal static string IconName(int index)
         {
-            return IconPrefix + (index + 1).ToString("00");
+            return IconName(index, null);
+        }
+
+        /// <summary>第 index（0 起）颗按钮的图标名，附上配置指纹。</summary>
+        internal static string IconName(int index, string suffix)
+        {
+            return IconPrefix + (index + 1).ToString("00") + (suffix ?? "");
+        }
+
+        /// <summary>
+        /// 配置指纹（"_" + 8 位十六进制），拼在图标文件名后面。
+        ///
+        /// 为什么需要：NX 按 BITMAP **名字**缓存位图，名字不变时可能一直复用旧图 ——
+        /// 表现就是"配置页改了颜色、磁盘上的 bmp 也确实换了内容，功能区还是老样子"。
+        /// 名字跟着配置内容变，NX 就没有旧条目可复用，重启后必然重新读文件。
+        /// </summary>
+        internal static string IconSuffix(DisplayGroupCfg cfg)
+        {
+            unchecked
+            {
+                uint h = 2166136261u;                       // FNV-1a
+                ColorSlot[] slots = (cfg != null && cfg.Slots != null) ? cfg.Slots : Default();
+                for (int i = 0; i < Max; i++)
+                {
+                    ColorSlot s = (i < slots.Length && slots[i] != null) ? slots[i] : new ColorSlot();
+                    h = (h ^ (s.Enabled ? 1u : 0u)) * 16777619u;
+                    h = (h ^ ToByte(s.R)) * 16777619u;
+                    h = (h ^ ToByte(s.G)) * 16777619u;
+                    h = (h ^ ToByte(s.B)) * 16777619u;
+                }
+                h = (h ^ ((cfg != null && cfg.ShowTransparency) ? 1u : 0u)) * 16777619u;
+                return "_" + h.ToString("x8", CultureInfo.InvariantCulture);
+            }
         }
 
         /// <summary>出厂默认：淡蓝 / 浅绿 / 浅灰 / 白色 / 黑色，其余槽为空。</summary>
@@ -186,19 +218,34 @@ namespace LYJ
         // 48 是 24 的整两倍 —— 不管 NX 最后画成 24 还是 32/40，缩放都是整比，色块不会发虚。
         private const int IconSize = 48;
 
-        /// <summary>按配置重画全部显示组图标（颜色块 / 空位 / 透明化棋盘格 / 配置按钮）。</summary>
-        internal static void WriteAllIcons(DisplayGroupCfg cfg)
+        /// <summary>
+        /// 按配置重画全部显示组图标（颜色块 / 空位 / 透明化棋盘格 / 配置按钮）。
+        /// 文件名带配置指纹（见 <see cref="IconSuffix"/>），所以配置一变就是一组新文件。
+        /// </summary>
+        /// <param name="cleanup">
+        /// 是否删掉其它指纹的旧槽图标。只在**配置保存时**传 true：
+        /// 那时本次会话的功能区早已加载完位图，删旧文件安全；启动时传 false ——
+        /// 本次启动 NX 读的是上一次写的 .grb（引用的可能是旧指纹），
+        /// 提前删文件会让按钮变成空白图。
+        /// </param>
+        internal static void WriteAllIcons(DisplayGroupCfg cfg, bool cleanup = false)
         {
             try
             {
                 string dir = LYJApp.AppDir;
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
+                string suffix = IconSuffix(cfg);
                 ColorSlot[] slots = (cfg != null && cfg.Slots != null) ? cfg.Slots : Default();
+                var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 for (int i = 0; i < Max; i++)
                 {
                     ColorSlot s = (i < slots.Length && slots[i] != null) ? slots[i] : new ColorSlot();
-                    string path = Path.Combine(dir, IconName(i) + ".bmp");
+                    string name = IconName(i, suffix);
+                    keep.Add(name + ".bmp");
+
+                    string path = Path.Combine(dir, name + ".bmp");
                     if (s.Enabled)
                         WriteIcon(path, s.R, s.G, s.B);
                     else
@@ -207,11 +254,36 @@ namespace LYJ
 
                 WriteCheckerIcon(Path.Combine(dir, "lyj_transparency.bmp"));
                 WritePaletteIcon(Path.Combine(dir, "lyj_color_config.bmp"));
+
+                if (cleanup) DeleteStaleSlotIcons(dir, keep);
             }
             catch
             {
                 // 图标写不出来不影响其它功能（只是按钮显示成占位图）
             }
+        }
+
+        /// <summary>删掉 `lyj_color_NN[_xxxxxxxx].bmp` 里不在 keep 中的旧文件（不动 lyj_color_config.bmp）。</summary>
+        private static void DeleteStaleSlotIcons(string dir, HashSet<string> keep)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir, IconPrefix + "*.bmp"))
+                {
+                    string name = Path.GetFileName(f);
+                    if (keep.Contains(name)) continue;
+
+                    // lyj_color_ 之后必须是两位数字，才可能是槽图标
+                    string stem = Path.GetFileNameWithoutExtension(name);
+                    if (stem.Length < IconPrefix.Length + 2) continue;
+                    char d0 = stem[IconPrefix.Length];
+                    char d1 = stem[IconPrefix.Length + 1];
+                    if (!char.IsDigit(d0) || !char.IsDigit(d1)) continue;
+
+                    try { File.Delete(f); } catch { }
+                }
+            }
+            catch { }
         }
 
         /// <summary>48×48 纯色块（无边框、无文字）。</summary>

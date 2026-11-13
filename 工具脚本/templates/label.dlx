@@ -1,0 +1,31 @@
+<Property class="UICOMP_label" hierarchy="UGS::UICOMP_group" id="{WIDGET_ID}" mask="256" name="{WIDGET_ID}" presentation="Label/Bitmap" type="uicomp">
+    <item Expanded="1" class="UICOMP_label" hierarchy="UGS::UI::Comp::Container" icon="styler_label.bmp" id="{WIDGET_ID}" name="{WIDGET_ID}" notes="" presentation="Label/Bitmap" type="uicomp">
+        <PropertyList id="id" mode="0">
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="API Name" mask="16656" name="API Name" sname="BlockID" source="3" type="string" value="{WIDGET_ID}"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="Visibility" mask="0" name="Visibility" sname="Show" source="1" type="logical" value="True"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="Sensitivity" mask="0" name="Sensitivity" sname="Enable" source="1" type="logical" value="True"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="Group" mask="16384" name="Group" sname="Group" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="Expanded" mask="4" name="Expanded" sname="Expanded" source="1" type="logical" value="True"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="HideGroup" mask="69636" name="HideGroup" sname="HideGroup" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="Focus" mask="69636" name="Focus" sname="Focus" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="CanFocus" mask="69636" name="CanFocus" sname="CanFocus" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="KeyboardFocus" mask="69636" name="KeyboardFocus" sname="KeyboardFocus" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="CanKeyboardFocus" mask="69636" name="CanKeyboardFocus" sname="CanKeyboardFocus" source="1" type="logical" value="True"/>
+            <Property ClassID="UGS::UICOMP_widget" group="Other::" hierarchy="UGS::UICOMP_label" id="UIOnly" mask="69636" name="UIOnly" sname="RetainValueInUIOnly" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP_widget" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="HQBitmap" mask="16384" name="HQBitmap" sname="HighQualityBitmap" source="1" type="logical" value="True"/>
+            <Property ClassID="UGS::UICOMP_widget" group="Other::" hierarchy="UGS::UICOMP_label" id="Translated" mask="16384" name="Translated" sname="Localize" source="1" type="logical" value="True"/>
+            <Property ClassID="UGS::UICOMP_label" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="Icon" mask="128" name="Icon" sname="Bitmap" source="3" type="string" value=""/>
+            <Property ClassID="UGS::UICOMP_label" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="Tooltip" mask="0" name="Tooltip" sname="Tooltip" source="1" type="utfstring" value=""/>
+            <Property ClassID="UGS::UICOMP_label" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="WordWrap" mask="16384" name="WordWrap" sname="WordWrap" source="1" type="logical" value="False"/>
+            <Property ClassID="UGS::UICOMP_label" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="BalloonTooltipText" mask="0" name="BalloonTooltipText" sname="BalloonTooltipText" source="1" type="utfstring" value=""/>
+            <Property ClassID="UGS::UICOMP_label" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="BalloonTooltipImage" mask="0" name="BalloonTooltipImage" sname="BalloonTooltipImage" source="1" type="string" value=""/>
+            <Property ClassID="UGS::UICOMP_label" brief="0" dynamic="0" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="BalloonTooltipLayout" mask="0" name="BalloonTooltipLayout" selected="0" sname="BalloonTooltipLayout" source="1" type="enum">
+                <Option name="Horizontal" value="0"/>
+                <Option name="Vertical" value="1"/>
+            </Property>
+            <Property ClassID="UGS::UICOMP_label" group="Block Specific::" hierarchy="UGS::UICOMP_label" id="DisplayBitmapLabel" mask="0" name="DisplayBitmapLabel" sname="DisplayBitmapLabel" source="1" type="logical" value="False"/>
+            {ATTACHMENTS}
+            <Property ClassID="UGS::UICOMP" group="General::" hierarchy="UGS::UICOMP_label" id="Title" mask="256" name="Title" sname="Label" source="1" type="utfstring" value="Not set"/>
+        </PropertyList>
+    </item>
+</Property>

@@ -22,6 +22,10 @@ $dist = Join-Path $outDir "dist"
 $now = Get-Date
 $stamp = $now.ToString("yyMMdd-HHmm")
 $version = "{0}.{1}.{2}" -f $Major, $Minor, $stamp
+# 注意：NuGet 还原用的 Version 不能带「纯数字的预发布标签」，而且 SemVer 禁止数字前导零 —
+# 打包时间一旦落在 00:00~00:09（时间后缀 0000~0009）就会 MSB4181「RestoreTask 返回 false 但没记错误」。
+# 所以喂给 MSBuild 的 Version 只到日期，带 -HHmm 的那串走 InformationalVersion（只影响显示）。
+$pkgVersion = "{0}.{1}.{2}" -f $Major, $Minor, $now.ToString("yyMMdd")
 # 程序集/文件版本号每段必须 <= 65534，所以用“2000 年起的第几天 + 当天第几秒/2”（经典做法），
 # 版本字符串本身（V1.1.261113-2140）走 InformationalVersion，窗口标题/卸载信息读的就是它。
 $fileVersion = "{0}.{1}.{2}.{3}" -f $Major, $Minor,
@@ -118,7 +122,8 @@ Write-Host "== 4/5 编译安装程序 ==" -ForegroundColor Cyan
 # 必须关掉 IncludeSourceRevisionInInformationalVersion —— 仓库有 .git 时 SDK 会往
 # InformationalVersion 尾巴拼 "+<提交哈希>"，窗口标题和卸载项里就会多出一串 hash。
 & dotnet build (Join-Path $root "源码\安装器\LYJSetup.csproj") -c Release -v q `
-    "/p:Version=$version" "/p:FileVersion=$fileVersion" "/p:AssemblyVersion=$fileVersion" `
+    "/p:Version=$pkgVersion" "/p:InformationalVersion=$version" `
+    "/p:FileVersion=$fileVersion" "/p:AssemblyVersion=$fileVersion" `
     "/p:IncludeSourceRevisionInInformationalVersion=false" `
     | Select-String -Pattern "error|已成功生成|个错误" | ForEach-Object { $_.Line }
 if ($LASTEXITCODE -ne 0) { throw "安装程序编译失败（退出码 $LASTEXITCODE）" }

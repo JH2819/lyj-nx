@@ -95,6 +95,7 @@ namespace NxToolboxSetup.Test
             Check(File.Exists(Path.Combine(install, @"application\lyj_color_config.bmp")), "配置按钮图标存在");
             Check(File.Exists(Path.Combine(install, @"application\LYJ_Transparency.dlx")), "透明化对话框定义已打包");
             Check(File.Exists(Path.Combine(install, @"application\LYJ_ColorConfig.dlx")), "显示组配置对话框已打包");
+            Check(File.Exists(Path.Combine(install, @"application\LYJ_ColorPick.dlx")), "改颜色选择对话框已打包");
 
             // 显示组的内容：固定 12 个按钮（透明化 + 颜色 01~10 + 配置），全部「仅图标」中号按钮。
             // 固定结构是"改颜色不用重启 NX"的前提：规模不变，只换颜色值。
