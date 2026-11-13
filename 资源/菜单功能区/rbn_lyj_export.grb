@@ -2,22 +2,25 @@ TITLE 图档导出
 
 VERSION 170
 
-BUTTON LYJ_APP__export_stl
-LABEL 导出STL
-BITMAP lyj_export_stl
+BEGIN_CASCADE LYJ_RBN_EXPORT_CASCADE
 RIBBON_STYLE ALWAYS_LARGE_IMAGE
+LABEL 导出图档
+BITMAP lyj_export_auto
 
-BUTTON LYJ_APP__export_stp
-LABEL 导出STP/STEP
-BITMAP lyj_export_stp
-RIBBON_STYLE ALWAYS_LARGE_IMAGE
+    BUTTON LYJ_APP__export_stl
+    LABEL 导出STL
+    BITMAP lyj_export_stl
 
-BUTTON LYJ_APP__export_igs
-LABEL 导出IGS
-BITMAP lyj_export_igs
-RIBBON_STYLE ALWAYS_LARGE_IMAGE
+    BUTTON LYJ_APP__export_stp
+    LABEL 导出STP/STEP
+    BITMAP lyj_export_stp
 
-BUTTON LYJ_APP__export_xt
-LABEL 导出X_T
-BITMAP lyj_export_xt
-RIBBON_STYLE ALWAYS_LARGE_IMAGE
+    BUTTON LYJ_APP__export_igs
+    LABEL 导出IGS
+    BITMAP lyj_export_igs
+
+    BUTTON LYJ_APP__export_xt
+    LABEL 导出X_T
+    BITMAP lyj_export_xt
+
+END_CASCADE

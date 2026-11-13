@@ -1,10 +1,21 @@
-# LYJ 功能区固定按钮图标清单（文件名<TAB>文字）
+﻿# LYJ 功能区固定按钮图标清单（文件名<TAB>文字）
+# 大按钮 60x60 带文字；「显示」组是中号按钮（MEDIUM_IMAGE），48x48 纯色块（无边框无文字，名字由功能区 LABEL 给）
 lyj_cam_assistant	加工|助手
-lyj_import_stl	导入|STL
-lyj_import_stp	导入|STP
-lyj_import_igs	导入|IGS
-lyj_import_xt	导入|X_T
+lyj_import_auto	导入|图档
+lyj_export_auto	导出|图档
 lyj_export_stl	导出|STL
 lyj_export_stp	导出|STP
 lyj_export_igs	导出|IGS
 lyj_export_xt	导出|X_T
+lyj_transparency	透明化	48x48 棋盘格（无边框）
+lyj_color_01	淡蓝	48x48 纯色块
+lyj_color_02	浅绿	48x48 纯色块
+lyj_color_03	浅灰	48x48 纯色块
+lyj_color_04	白色	48x48 纯色块
+lyj_color_05	黑色	48x48 纯色块
+lyj_color_06	（备用槽）	48x48 空位「＋」（未配置时由程序画）
+lyj_color_07	（备用槽）	48x48 空位「＋」（未配置时由程序画）
+lyj_color_08	（备用槽）	48x48 空位「＋」（未配置时由程序画）
+lyj_color_09	（备用槽）	48x48 空位「＋」（未配置时由程序画）
+lyj_color_10	（备用槽）	48x48 空位「＋」（未配置时由程序画）
+lyj_color_config	配置显示按钮	48x48 九宫格（调色板）

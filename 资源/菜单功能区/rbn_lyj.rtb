@@ -6,4 +6,6 @@ GROUP rbn_lyj_import.grb
 
 GROUP rbn_lyj_export.grb
 
+GROUP rbn_lyj_color.grb
+
 GROUP rbn_lyj_cam.grb

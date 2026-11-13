@@ -22,42 +22,31 @@ END_OF_AFTER
 
 MENU LYJ_MENU
 
-    CASCADE_BUTTON LYJ_IMPORT_MENU
-
-    LABEL 图档导入
+    BUTTON LYJ_APP__import_auto
+    LABEL 导入图档
+    BITMAP lyj_import_auto
+    ACTIONS LYJ_APP__import_auto
 
     CASCADE_BUTTON LYJ_EXPORT_MENU
-
     LABEL 图档导出
+
+    BUTTON LYJ_APP__transparency
+    LABEL 透明化
+    BITMAP lyj_transparency
+    ACTIONS LYJ_APP__transparency
+
+    CASCADE_BUTTON LYJ_COLOR_MENU
+    LABEL 部件颜色
+
+    BUTTON LYJ_APP__color_config
+    LABEL 配置颜色按钮
+    BITMAP lyj_color_config
+    ACTIONS LYJ_APP__color_config
 
     BUTTON LYJ_APP__cam_assistant
     LABEL 加工助手
     BITMAP lyj_cam_assistant
     ACTIONS LYJ_APP__cam_assistant
-END_OF_MENU
-
-MENU LYJ_IMPORT_MENU
-
-    BUTTON LYJ_APP__import_stl
-    LABEL 导入STL
-    BITMAP lyj_import_stl
-    ACTIONS LYJ_APP__import_stl
-
-    BUTTON LYJ_APP__import_stp
-    LABEL 导入STP/STEP
-    BITMAP lyj_import_stp
-    ACTIONS LYJ_APP__import_stp
-
-    BUTTON LYJ_APP__import_igs
-    LABEL 导入IGS
-    BITMAP lyj_import_igs
-    ACTIONS LYJ_APP__import_igs
-
-    BUTTON LYJ_APP__import_xt
-    LABEL 导入X_T
-    BITMAP lyj_import_xt
-    ACTIONS LYJ_APP__import_xt
-
 END_OF_MENU
 
 MENU LYJ_EXPORT_MENU
@@ -81,5 +70,59 @@ MENU LYJ_EXPORT_MENU
     LABEL 导出X_T
     BITMAP lyj_export_xt
     ACTIONS LYJ_APP__export_xt
+
+END_OF_MENU
+
+MENU LYJ_COLOR_MENU
+
+    BUTTON LYJ_APP__color01
+    LABEL 颜色 1
+    BITMAP lyj_color_01
+    ACTIONS LYJ_APP__color01
+
+    BUTTON LYJ_APP__color02
+    LABEL 颜色 2
+    BITMAP lyj_color_02
+    ACTIONS LYJ_APP__color02
+
+    BUTTON LYJ_APP__color03
+    LABEL 颜色 3
+    BITMAP lyj_color_03
+    ACTIONS LYJ_APP__color03
+
+    BUTTON LYJ_APP__color04
+    LABEL 颜色 4
+    BITMAP lyj_color_04
+    ACTIONS LYJ_APP__color04
+
+    BUTTON LYJ_APP__color05
+    LABEL 颜色 5
+    BITMAP lyj_color_05
+    ACTIONS LYJ_APP__color05
+
+    BUTTON LYJ_APP__color06
+    LABEL 颜色 6
+    BITMAP lyj_color_06
+    ACTIONS LYJ_APP__color06
+
+    BUTTON LYJ_APP__color07
+    LABEL 颜色 7
+    BITMAP lyj_color_07
+    ACTIONS LYJ_APP__color07
+
+    BUTTON LYJ_APP__color08
+    LABEL 颜色 8
+    BITMAP lyj_color_08
+    ACTIONS LYJ_APP__color08
+
+    BUTTON LYJ_APP__color09
+    LABEL 颜色 9
+    BITMAP lyj_color_09
+    ACTIONS LYJ_APP__color09
+
+    BUTTON LYJ_APP__color10
+    LABEL 颜色 10
+    BITMAP lyj_color_10
+    ACTIONS LYJ_APP__color10
 
 END_OF_MENU

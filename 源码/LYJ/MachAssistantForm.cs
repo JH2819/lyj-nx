@@ -82,6 +82,9 @@ namespace LYJ
         public static string FontName = "Microsoft YaHei UI";
         public static float FontSize = 9f;
 
+        /// <summary>加粗：有些中文字体（仿宋、宋体等）细笔画在深色模型上看不清，加粗后清楚很多。</summary>
+        public static bool Bold = false;
+
         /// <summary>全部行的显示名（与 RowDefs 的 Id 对应，悬浮窗与配置窗口共用）。
         /// 顺序按常用加工助手的参数表排（转速、进给在前）。</summary>
         public static readonly string[] AllRows =
@@ -178,6 +181,7 @@ namespace LYJ
                     {
                         case "font": if (v.Length > 0) FontName = v; break;
                         case "size": { float f; if (float.TryParse(v, out f) && f >= 7 && f <= 24) FontSize = f; break; }
+                        case "bold": Bold = v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); break;
                         case "dock_gap":
                             {
                                 int g;
@@ -244,6 +248,7 @@ namespace LYJ
                 List<string> lines = new List<string>();
                 lines.Add("font=" + FontName);
                 lines.Add("size=" + FontSize.ToString("0.#"));
+                lines.Add("bold=" + (Bold ? "1" : "0"));
                 lines.Add("rowset=" + RowSetVersion);
                 lines.Add("order=" + string.Join(",", RowOrder.ToArray()));
                 lines.Add("hidden=" + string.Join(",", HiddenRows.ToArray()));
@@ -346,6 +351,15 @@ namespace LYJ
             int fi = cmbFont.Items.IndexOf(MachAssistantConfig.FontName);
             if (fi >= 0) cmbFont.SelectedIndex = fi;
             _pageParam.Controls.Add(cmbFont);
+
+            // 加粗：仿宋/宋体这类细笔画字体在模型上看不清，加粗一档明显改善
+            CheckBox chkBold = new CheckBox
+            {
+                Text = "加粗",
+                Bounds = new Rectangle(392, y + 4, 72, 22),
+                Checked = MachAssistantConfig.Bold
+            };
+            _pageParam.Controls.Add(chkBold);
             y += 36;
 
             _pageParam.Controls.Add(MakeLabel("大小", 15, y + 3, 56));
@@ -441,6 +455,7 @@ namespace LYJ
                 float sz;
                 if (float.TryParse(cmbSize.Text, out sz) && sz >= 7 && sz <= 24)
                     MachAssistantConfig.FontSize = sz;
+                MachAssistantConfig.Bold = chkBold.Checked;
                 // 列表顺序 -> 行顺序；勾选状态 -> 隐藏表；颜色副本 -> 行颜色（与悬浮窗同步）
                 MachAssistantConfig.RowOrder = new List<string>(_ids);
                 MachAssistantConfig.HiddenRows = new List<string>();
@@ -976,7 +991,7 @@ namespace LYJ
         private HeaderTab _tabTpl;                      // 标题栏内的页签按钮（自绘，可全透明）
         private HeaderTab _tabParam;
         private Panel _pageHost;                        // 页面容器（手动定位在标题栏下方）
-        private Panel _pageTpl;                         // 页0：模板（白底不透明，程序视图样式）
+        private Panel _pageTpl;                         // 页0：模板（色键透明，程序视图样式）
         private Panel _pageParam;                       // 页1：加工参数（色键透明）
         private int _curPage;                           // 当前页：0=模板 1=加工参数
         private int _tplAnchorH;                        // 模板页撑满时记录的图形区高度（用于跟随 NX 窗口缩放）
@@ -998,6 +1013,16 @@ namespace LYJ
         private Label _lblTplHint;                      // 模板页底部提示行（与 _lblHint 同字体）
         private Font _hintFont;                         // 提示行专用字体（固定 8pt）
 
+        // ---- 模板页背景：浅灰半透明 ----
+        // 色键窗口（TransparencyKey）只能"全透明 / 不透明"二选一，画不出半透明：
+        // 半透明的像素会和洋红键混色，结果是发粉的实色块。
+        // 所以这里另开一个**分层窗口**当衬底（Form.Opacity = 真 alpha 混合），
+        // 垫在悬浮窗下面、NX 上面一层 —— 模板页的色键区域就透出这层浅灰，
+        // 文字/树线仍是实色，观感就是"浅灰色半透明面板"。
+        private static readonly Color TplBackColor = Color.FromArgb(236, 238, 242);   // 浅灰
+        private const double TplBackOpacity = 0.55;                                  // 0=全透 1=不透明
+        private Form _tplBack;                          // 模板页衬底窗口（懒建）
+
         public MachAssistantForm()
         {
             MachAssistantConfig.Load();
@@ -1011,6 +1036,7 @@ namespace LYJ
             {
                 _timer.Stop();
                 try { HidePick(); if (_pickHost != null) _pickHost.Dispose(); } catch { }
+                try { if (_tplBack != null) { _tplBack.Close(); _tplBack.Dispose(); _tplBack = null; } } catch { }
                 UnhookPartLifecycle();
                 if (MachAssistant.Form == this) MachAssistant.Form = null;
             };
@@ -1070,6 +1096,108 @@ namespace LYJ
             {
                 return true;            // 读不到 = 图档已经不在了
             }
+        }
+
+        // ---------------------------------------------------- 模板页半透明衬底
+        /// <summary>
+        /// 模板页的半透明衬底窗口：无边框、不激活、鼠标穿透、不进任务栏。
+        /// 用 Form.Opacity 做真正的 alpha 混合（不是色键），所以能"浅灰 + 半透明"。
+        /// 挂成 NX 主窗口的 owned window：永远浮在 NX 之上，再由 KeepTplBackdropBelow()
+        /// 压到悬浮窗下面一层，于是只有模板页那块区域透出浅灰。
+        /// </summary>
+        private sealed class TplBackdrop : Form
+        {
+            public TplBackdrop()
+            {
+                FormBorderStyle = FormBorderStyle.None;
+                ShowInTaskbar = false;
+                StartPosition = FormStartPosition.Manual;
+                BackColor = TplBackColor;        // 外层类的私有静态字段，嵌套类可直接用
+                Opacity = TplBackOpacity;
+                DoubleBuffered = true;
+            }
+
+            /// <summary>Show() 时不要抢焦点（否则会把 NX/悬浮窗的焦点夺走）。</summary>
+            protected override bool ShowWithoutActivation { get { return true; } }
+
+            protected override CreateParams CreateParams
+            {
+                get
+                {
+                    CreateParams cp = base.CreateParams;
+                    cp.ExStyle |= 0x08000000;    // WS_EX_NOACTIVATE   点它不激活
+                    cp.ExStyle |= 0x00000020;    // WS_EX_TRANSPARENT  鼠标穿透，不挡点模型
+                    cp.ExStyle |= 0x00000080;    // WS_EX_TOOLWINDOW   不进任务栏 / Alt-Tab
+                    return cp;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 让衬底跟上模板页：位置 = 模板页的屏幕矩形；只在模板页可见时显示。
+        /// keepOrder=true 时顺便把衬底重新压回悬浮窗下面一层（NX 抢焦点/弹窗后 z 序会变）。
+        /// </summary>
+        private void SyncTplBackdrop(bool keepOrder)
+        {
+            try
+            {
+                bool want = Visible && !IsDisposed
+                            && _curPage == 0 && _pageTpl != null && _pageTpl.Visible;
+                if (!want)
+                {
+                    HideTplBackdrop();
+                    return;
+                }
+
+                // 先算好模板页的屏幕矩形：新窗口直接按这个位置创建，避免"先在左上角闪一下"
+                Rectangle r = _pageTpl.RectangleToScreen(_pageTpl.ClientRectangle);
+                if (r.Width <= 0 || r.Height <= 0) return;
+
+                bool fresh = false;      // 本次刚显示（新窗口/从隐藏变显示）：必须立刻压到下面一层
+                if (_tplBack == null || _tplBack.IsDisposed)
+                {
+                    if (_nxMain == IntPtr.Zero) AnchorRect();   // 顺带缓存 NX 主窗口句柄
+                    _tplBack = new TplBackdrop();
+                    _tplBack.Bounds = r;
+                    _tplBack.Show();
+                    // 挂成 NX 主窗口的 owned window（Show 之后 Handle 才稳定，owner 也一定已经解析出来了）
+                    try
+                    {
+                        if (_nxMain != IntPtr.Zero)
+                            SetWindowLongPtr(_tplBack.Handle, GWL_HWNDPARENT, _nxMain);
+                    }
+                    catch { }
+                    fresh = true;
+                }
+
+                if (_tplBack.Bounds != r) _tplBack.Bounds = r;
+                if (!_tplBack.Visible) { _tplBack.Show(); fresh = true; }
+                // 新显示出来的窗口默认在最上面，会盖住树 —— 必须马上压下去，不能等下一次 keepOrder
+                if (fresh || keepOrder) KeepTplBackdropBelow();
+            }
+            catch { }
+        }
+
+        /// <summary>把衬底压到悬浮窗下面一层（两个窗口都 owned 在 NX 主窗口上，同一 z 序带）。</summary>
+        private void KeepTplBackdropBelow()
+        {
+            try
+            {
+                if (_tplBack == null || _tplBack.IsDisposed || !_tplBack.Visible) return;
+                SetWindowPos(_tplBack.Handle, Handle, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            }
+            catch { }
+        }
+
+        private void HideTplBackdrop()
+        {
+            try
+            {
+                if (_tplBack != null && !_tplBack.IsDisposed && _tplBack.Visible)
+                    _tplBack.Hide();
+            }
+            catch { }
         }
 
         // ------------------------------------------------------------------ UI
@@ -1143,18 +1271,19 @@ namespace LYJ
                 BackColor = key,
                 Visible = true
             };
-            _pageTpl = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+            // 模板页同样用色键背景（不再是白底）：能看到后面的模型，树线和文字仍是实色
+            _pageTpl = new Panel { Dock = DockStyle.Fill, BackColor = key };
             _pageParam = new Panel { Dock = DockStyle.Fill, BackColor = key };
             _pageHost.Controls.Add(_pageParam);
             _pageHost.Controls.Add(_pageTpl);
             Controls.Add(_pageHost);
             _pageTpl.BringToFront();
 
-            // 模板页：程序顺序视图样式的策略树（白底不透明，随页面尺寸填充）
+            // 模板页：程序顺序视图样式的策略树（背景走色键全透明，只剩树线/图标/文字可见）
             // 多选用自绘（TreeView 原生不支持）：Ctrl 单个切换、Shift 范围、双击批量插入
             _treeTpl = new TreeView
             {
-                BackColor = Color.White,
+                BackColor = key,
                 ForeColor = Color.FromArgb(30, 30, 30),
                 BorderStyle = BorderStyle.None,
                 HideSelection = true,
@@ -1170,15 +1299,15 @@ namespace LYJ
             _treeTpl.NodeMouseDoubleClick += Tpl_DoubleClick;
             _pageTpl.Controls.Add(_treeTpl);
 
-            // 模板页底部操作提示（白底页内，普通 Label 即可；字体与参数页提示行一致：固定 8pt 黑色）
-            _lblTplHint = new Label
+            // 模板页底部操作提示（色键透明底 + 单色栅格文字：不会在白/洋红之间留抗锯齿毛边）
+            _lblTplHint = new SolidColorLabel
             {
                 Text = "Ctrl/Shift 多选策略，左键双击批量插入到当前选中的组",
                 Dock = DockStyle.Bottom,
                 Height = 24,
-                BackColor = Color.White,
+                BackColor = Color.Transparent,      // 父面板是色键 → 抠成全透明
                 ForeColor = Color.Black,
-                AutoEllipsis = true,
+                TextIndent = 6,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(6, 0, 0, 0)
             };
@@ -1533,6 +1662,9 @@ namespace LYJ
         /// </summary>
         private class SolidColorLabel : Label
         {
+            /// <summary>文字左侧留白（自绘不用 Padding，单给一个左边距）。</summary>
+            public int TextIndent;
+
             public SolidColorLabel()
             {
                 BackColor = Color.Transparent;
@@ -1546,6 +1678,8 @@ namespace LYJ
                 base.OnPaintBackground(e);      // 先铺父背景（洋红色键，随后被 GDI 抠除）
                 e.Graphics.TextRenderingHint =
                     System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
+                Rectangle r = ClientRectangle;
+                if (TextIndent > 0) { r.X += TextIndent; r.Width -= TextIndent; }
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Near;
@@ -1553,7 +1687,7 @@ namespace LYJ
                     sf.FormatFlags = StringFormatFlags.NoWrap;
                     sf.Trimming = StringTrimming.EllipsisCharacter;
                     using (SolidBrush b = new SolidBrush(ForeColor))
-                        e.Graphics.DrawString(Text, Font, b, ClientRectangle, sf);
+                        e.Graphics.DrawString(Text, Font, b, r, sf);
                 }
             }
         }
@@ -1620,11 +1754,35 @@ namespace LYJ
         private void ApplyConfigToUi()
         {
             CancelEdit();
-            Font = new Font(MachAssistantConfig.FontName, MachAssistantConfig.FontSize);
+            Font = MakeUiFont(MachAssistantConfig.FontName, MachAssistantConfig.FontSize,
+                MachAssistantConfig.Bold);
+            if (_treeTpl != null) _treeTpl.Font = Font;    // 树是自绘，行高与自绘字体必须同一份
             ApplyRowColors();
             Relayout();
             RefreshValues();
             PlaceAtAnchor();
+        }
+
+        /// <summary>
+        /// 按配置建字体。字体名必须本机真的存在：new Font("不存在", size) 不会报错，
+        /// 而是悄悄换成 Microsoft Sans Serif —— 那套字体没有中文字形，中文全变成空白。
+        /// 没有粗体的字体（仿宋/宋体大多只有常规体）由 GDI+ 合成加粗，效果够用。
+        /// </summary>
+        private static Font MakeUiFont(string name, float size, bool bold)
+        {
+            FontStyle style = bold ? FontStyle.Bold : FontStyle.Regular;
+            try
+            {
+                if (!string.IsNullOrEmpty(name))
+                    foreach (FontFamily fam in FontFamily.Families)
+                        if (string.Equals(fam.Name, name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 字体族自称支持 Bold 就直接用；不支持时 new Font 会自己合成，不用管
+                            return new Font(fam, size, style);
+                        }
+            }
+            catch { }
+            return new Font("Microsoft YaHei UI", size, style);
         }
 
         /// <summary>
@@ -1643,6 +1801,27 @@ namespace LYJ
                     SetWindowLongPtr(Handle, GWL_HWNDPARENT, _nxMain);
             }
             catch { }
+        }
+
+        /// <summary>窗口移动/改尺寸：模板页衬底跟着走（窗口由 PlaceAtAnchor 停靠，不支持拖动）。</summary>
+        protected override void OnMove(EventArgs e)
+        {
+            base.OnMove(e);
+            SyncTplBackdrop(true);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            SyncTplBackdrop(true);
+        }
+
+        /// <summary>窗口隐藏（关闭/切图档）时衬底必须一起收起，否则会留下一块灰。</summary>
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            if (!Visible) HideTplBackdrop();
+            else SyncTplBackdrop(true);
         }
 
         /// <summary>按配置应用每行文字颜色（标题+数值同色），未配置的用默认色。</summary>
@@ -1680,14 +1859,16 @@ namespace LYJ
             // 行高 = 字高 + 行间距；行间距 6px（原为 12px，按要求收紧一半，显示更密）
             int rowH = Font.Height + 6;
 
-            // 提示行字体：固定 8pt，固定黑色；字号变了才重建字体
+            // 提示行字体：固定 8pt，但跟随主字体的字体族与「加粗」；有变化才重建
             const float hs = 8f;
+            FontStyle hsStyle = MachAssistantConfig.Bold ? FontStyle.Bold : FontStyle.Regular;
             if (_hintFont == null ||
                 Math.Abs(_hintFont.SizeInPoints - hs) > 0.01f ||
-                _hintFont.FontFamily.Name != Font.FontFamily.Name)
+                _hintFont.FontFamily.Name != Font.FontFamily.Name ||
+                _hintFont.Style != hsStyle)
             {
                 Font old = _hintFont;
-                _hintFont = new Font(Font.FontFamily, hs);
+                _hintFont = new Font(Font.FontFamily, hs, hsStyle);
                 _lblHint.Font = _hintFont;
                 if (old != null) old.Dispose();
             }
@@ -1863,6 +2044,7 @@ namespace LYJ
                 Relayout();
                 PlaceAtAnchor();
             }
+            SyncTplBackdrop(true);        // 换页后衬底跟着显示/隐藏
         }
 
         /// <summary>收集 NX 里当前多选的工序（顺序 = 选择顺序）。</summary>
@@ -2413,15 +2595,42 @@ namespace LYJ
 
         // ------------------------------------------------------------ 模板树多选（自绘）
 
-        /// <summary>自绘节点：多选高亮浅蓝底，其余白底（TreeView 原生不支持多选，颜色自己画）。</summary>
+        /// <summary>自绘节点：多选高亮浅蓝底，未选中不铺底（让色键透出模型）。
+        /// 文字用 GDI+ 单色栅格绘制——走 TextRenderer 会按 ClearType 采样到洋红色键，
+        /// 字边会出现粉边（和 SolidColorLabel 同一个坑）。
+        ///
+        /// ⚠ 绝对不能用 StringFormat.GenericTypographic：它走 GDI+ 的“排版模式”，
+        /// 画中文时会整段丢字（纯英文正常）。表现出来就是——把配置里的字体改成
+        /// 华文仿宋 / 宋体 这类中文字体后，模板树里的中文节点名（程序组、工序名）
+        /// 一片空白，但行、图标、虚线都在，看着像“树没内容”。用普通 StringFormat
+        /// 就正常，且仍是 1bit 栅格、无抗锯齿，不会和洋红色键混色。</summary>
         private void Tpl_DrawNode(object sender, DrawTreeNodeEventArgs e)
         {
             bool sel = _tplSel.Contains(e.Node);
-            Color back = sel ? Color.FromArgb(204, 228, 247) : _treeTpl.BackColor;
             Color fore = sel ? Color.FromArgb(20, 60, 110) : _treeTpl.ForeColor;
-            e.Graphics.FillRectangle(new SolidBrush(back), e.Bounds);
-            TextRenderer.DrawText(e.Graphics, e.Node.Text, _treeTpl.Font,
-                e.Bounds, fore, TextFormatFlags.Default);
+            if (sel)
+                using (SolidBrush back = new SolidBrush(Color.FromArgb(204, 228, 247)))
+                    e.Graphics.FillRectangle(back, e.Bounds);
+
+            e.Graphics.TextRenderingHint =
+                System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
+
+            // 行高不够时按字高居中撑开（大字号下 TreeView 给的 e.Bounds 偶尔比字面矮，字会被裁没）
+            Font font = _treeTpl.Font;
+            Rectangle r = e.Bounds;
+            int h = Math.Max(r.Height, font.Height);
+            r.Y += (e.Bounds.Height - h) / 2;
+            r.Height = h;
+
+            using (StringFormat sf = new StringFormat())
+            {
+                sf.Alignment = StringAlignment.Near;
+                sf.LineAlignment = StringAlignment.Center;
+                sf.FormatFlags = StringFormatFlags.NoWrap;
+                sf.Trimming = StringTrimming.EllipsisCharacter;
+                using (SolidBrush b = new SolidBrush(fore))
+                    e.Graphics.DrawString(e.Node.Text, font, b, r, sf);
+            }
         }
 
         /// <summary>模板树左键点击：维护多选状态。
@@ -3047,6 +3256,9 @@ namespace LYJ
                 // 启动约 1s 后自动读取一次模板策略树（主线程内一次小开销，之后不再读）
                 if (_tickCount == 5)
                     LoadTemplateTree();
+
+                // 模板页衬底：位置每拍对齐（便宜），z 序每秒重申一次
+                SyncTplBackdrop(_tickCount % 5 == 0);
             }
             catch { }
         }
@@ -5056,5 +5268,15 @@ namespace LYJ
 
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
         private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        // 模板页衬底：把窗口插到指定窗口下面一层（用来让浅灰衬底垫在悬浮窗底下）
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
+
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_NOOWNERZORDER = 0x0200;
     }
 }

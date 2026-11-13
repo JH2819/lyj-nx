@@ -1,17 +1,19 @@
-# LYJ
+﻿# LYJ
 
 **Siemens NX 图档导入导出 + 加工助手插件** — C# / .NET Framework 4.7.2 / Windows
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![NX](https://img.shields.io/badge/NX-2606%20only-orange)
 ![.NET](https://img.shields.io/badge/.NET%20Framework-4.7.2-512bd4)
-[![Release](https://img.shields.io/badge/release-v1.0-brightgreen.svg)](../../releases)
+[![Release](https://img.shields.io/badge/release-v1.1-brightgreen.svg)](../../releases)
 
-在 NX 里加一个 **LYJ** 菜单和一个 **LYJ** 功能区选项卡，做三件事：
+在 NX 里加一个 **LYJ** 菜单和一个 **LYJ** 功能区选项卡，做五件事：
 
 | 能力 | 一句话说明 |
 | --- | --- |
-| **图档导入 / 导出** | STL、STEP、IGES、Parasolid(X_T) 各四个按钮，一键进出，不用再翻菜单 |
+| **图档导入 / 导出** | 导入是单入口，选文件后按扩展名自动匹配导入器，覆盖 NX 原生导入的全部图档格式（20 余种）；导出收在一个「导出图档」下拉菜单里，展开选 STL / STEP / IGES / Parasolid |
+| **一键透明化** | NX 原生对话框：上面选部件、下面拖透明度滑条，边拖边生效 |
+| **一键改颜色** | 功能区「显示」组里一排纯色块按钮，默认淡蓝 / 浅绿 / 浅灰 / 白 / 黑；点组尾的配置按钮可用 NX 色盘改成任意颜色（最多 10 个） |
 | **加工助手** | 常驻悬浮窗：实时读出选中工序的 35 项参数，其中 20 项可直接改 |
 | **加工模板同步** | 扫描模板 prt 生成工序清单与按钮图标，模板一改自动重建 |
 
@@ -59,8 +61,8 @@
 
 装完应该看到：
 
-- **菜单栏** → `LYJ` → 导入 / 导出 / 加工助手
-- **功能区** → `LYJ` 选项卡 → 图档导入 / 图档导出 / 加工 三个组
+- **菜单栏** → `LYJ` → 导入图档 / 图档导出（子菜单）/ 透明化 / 配置显示按钮 / 加工助手
+- **功能区** → `LYJ` 选项卡 → 图档导入 / 图档导出 / 显示 / 加工 四个组（导出组是一个「导出图档」下拉按钮；显示组是一排**只有图标**的中号色块：透明化 + 若干颜色 + 配置）
 
 卸载走「控制面板 → 程序和功能 → LYJ」。静默安装、指定安装目录、手动登记等高级用法见
 [文档/使用说明.txt](文档/使用说明.txt)。
@@ -69,16 +71,105 @@
 
 ### 3.1 图档导入 / 导出
 
-菜单里各四个按钮，对应四种格式：
+图档**导入只有一个入口**：点「导入图档」，选文件后由程序按扩展名自动挑导入器，不用先想清楚格式再去点对应按钮。覆盖 NX 原生「文件 → 导入」里的全部图档格式。
 
-| 格式 | 扩展名 | 导入 | 导出 |
-| --- | --- | :---: | :---: |
-| STL（网格 / 收敛体） | `.stl` | ✅ | ✅ |
-| STEP | `.stp` | ✅ | ✅ |
-| IGES | `.igs` | ✅ | ✅ |
-| Parasolid | `.x_t` | ✅ | ✅ |
+**实体 / 曲面 CAD**
 
-### 3.2 加工助手
+| 格式 | 扩展名 | 导入方式 | 导出 |
+| --- | --- | --- | :---: |
+| NX 部件 | `.prt` | 按文件头判别：NX 部件（`SPLMSSTR` / OLE）走部件导入器，Creo 文本部件走 Creo 导入器 | — |
+| STEP | `.stp` / `.step` | 读文件头 `FILE_SCHEMA` 识别 AP203 / AP214 / AP242，用对应导入器 | ✅ |
+| IGES | `.igs` / `.iges` | 曲面曲线按 NURBS 样条重建，保留原图层 | ✅ |
+| Parasolid | `.x_t` / `.x_b` / `.xmt_txt` / `.xmt_bin` | Parasolid 导入器，落到活动图层 | ✅ |
+| CATIA V4 | `.model` / `.exp` / `.session` / `.dlv` | CATIA V4 导入器 | — |
+| CATIA V5 | `.CATPart` / `.CATProduct` | CATIA V5 导入器 | — |
+| CATIA V6（3DXML） | `.3dxml` | 3DXML 导入器 | — |
+| Creo / Pro-E | `.prt` / `.asm` / `.xpr` / `.xas` / `.neu` | Creo 导入器（含 `.prt.1` 这类版本号后缀） | — |
+| Autodesk Inventor | `.ipt` / `.iam` | Inventor 导入器 | — |
+| Rhino | `.3dm` | Rhino 导入器 | — |
+| ACIS | `.sat` / `.sab` / `.asat` | ACIS 导入器，**缝合自动勾选** | — |
+| DXF / DWG | `.dxf` / `.dwg` | DXF/DWG 导入器 | — |
+| G3D | `.g3d` | G3D 导入器 | — |
+| I-deas | `.mf1` / `.arc` / `.unv` / `.pkg` | I-deas 导入器 | — |
+
+**网格 / 面片**
+
+| 格式 | 扩展名 | 导入方式 | 导出 |
+| --- | --- | --- | :---: |
+| STL | `.stl` | 先导入为小平面体，再批量转收敛体，移到第 1 层 | ✅ |
+| 3MF | `.3mf` | 3MF 导入器 | — |
+| Wavefront OBJ | `.obj` | OBJ 导入器 | — |
+| VRML | `.wrl` / `.vrml` | VRML 导入器 | — |
+
+**建筑 / 二维 / 其他**
+
+| 格式 | 扩展名 | 导入方式 | 导出 |
+| --- | --- | --- | :---: |
+| IFC | `.ifc` | IFC 导入器，**展平装配自动勾选** | — |
+| Revit | `.rvt` | Revit 导入器 | — |
+| ASC | `.asc` | ASC 导入器 | — |
+| Geospatial | `.shp` | 地理数据导入器 | — |
+| CGM | `.cgm` | CGM 导入器 | — |
+
+> **展平装配 / 缝合**：导入器带这两个选项的一律勾选 —— STEP（203/214/242）、IGES、Parasolid、IFC 勾「展平装配」，STEP、IGES、ACIS 勾「缝合」；其余参数保持 NX 默认值。CATIA V5、Creo、Inventor、Rhino 的导入器接口没有暴露这两个开关，按 NX 默认处理。
+
+**块、符号、点云（POINTS）** 这类非图档对象没有对应的编程接口，请用 NX 自带的「文件 → 导入」。
+
+**导出**收成一个下拉菜单：功能区「图档导出」组里只有 **「导出图档」** 一个按钮，点开（或点它右下角的箭头）
+展开 STL / STEP / IGES / X_T 四项，选哪项就导哪种。菜单栏 `LYJ → 图档导出` 里是同样这四项。
+
+导出前需要先框选要导出的体，格式要自己指定（与 NX 原生导出一致）。
+
+### 3.2 一键透明化
+
+点功能区「显示」组里第一个按钮「透明化」弹出 **NX 原生对话框**（Block Styler，不是自绘窗口）：上半区是对象选择（体 / 片体 / 面 / 边 / 特征都能点，点面会落到它所属的体上），下半区是一条 0~100 的透明度滑条。
+
+- 进对话框时会把图形区里**已经选中**的对象带进选择框，不用重选
+- 拖滑条 / 增删部件都会**即时**改写显示效果（不按确定也能看到结果）
+- 确定保留效果，取消回滚到打开对话框前的状态
+- 原理是 `DisplayModification.NewTranslucency`，只改显示属性，不动几何
+
+> 对话框定义文件是 `application\LYJ_Transparency.dlx`，由 `工具脚本\gen_transparency_dialog.py`
+> 从 NX 自带的分块模板拼装生成；改界面就改那个脚本，别手改 XML。
+
+### 3.3 一键改颜色 + 自定义颜色按钮
+
+和透明化同在一个 **「显示」** 组里（透明化排第一，配置按钮排最后），中间的按钮**只有图标**：
+48×48 的纯色块（中号按钮 `MEDIUM_IMAGE`），无边框无文字，只有图标本身。
+
+出厂默认五颗：
+
+| 按钮 | 调色板颜色 | 色值 |
+| --- | --- | --- |
+| 淡蓝 | `Pale Blue` | 137, 182, 255 |
+| 浅绿 | `Pale Green` | 215, 255, 199 |
+| 浅灰 | `Silver Gray` | 153, 153, 153 |
+| 白色 | `White` | 255, 255, 255 |
+| 黑色 | `Black` | 0, 0, 0 |
+
+先在图形区选中部件，再点颜色按钮即可。颜色按 **编号 → 调色板名 → 色值（容差 2%）** 三级找，
+三级都对不上会提示去配置里换一个颜色，不会瞎套一个错颜色。
+
+功能区里**固定 12 个按钮**：透明化 + 颜色 1~10 + 配置。没配置的槽画成「＋」空位（点它直接开配置窗口）。
+
+**配置（组尾那颗九宫格按钮）** — 点开是 NX 原生对话框，10 个颜色槽：
+
+- 每个槽 = 一个启用勾选 + 一个颜色块；点颜色块弹出的是 **NX 内置调色板**，选哪个就是哪个色号
+- 前 5 个槽默认是上面那五个颜色，6~10 号默认空着，勾上并选色即可用
+- 点确定后写 `config\color_slots.txt`、重画 48×48 图标
+
+> **改颜色不需要重启 NX**：颜色值是点按钮时现场读配置的，保存后回到图形区直接点就是新颜色。
+> 只有按钮上那颗**小色块的图示**是 NX 启动时加载的图，颜色要到下次启动 NX 才刷新（对话框里也会提示）。
+>
+> 之所以能免重启：按钮结构是固定的（12 个），配置只改颜色值。这也意味着**别再往功能区动态增删按钮** ——
+> 那类改动 NX 一定要求重启。
+>
+> 配置文件是纯文本，喜欢敲字也可以直接改它：
+> `序号 <TAB> 启用 <TAB> 色号 <TAB> R <TAB> G <TAB> B <TAB> 中文备注 <TAB> 调色板英文名`。
+
+> 「显示」组沿用的还是 `rbn_lyj_color.grb` 这个文件名（组名改了、文件名没改，省得动打包与兜底两处列表）。
+
+### 3.4 加工助手
 
 点「加工助手」开一个**无模式悬浮窗**，可以一直挂在图形区旁边，不抢焦点、不挡操作。
 
@@ -100,6 +191,9 @@
 写之前会建撤销标记，改坏了直接 Ctrl+Z 回退。
 
 **两个页签** — 「参数」页是上面那张表；「模板」页是树形列出的模板工序，**双击即插入**当前程序组。
+「模板」页背景是**浅灰半透明**（约 55%）：色键窗口做不出半透明，所以另开一个 `Opacity` 衬底窗口
+垫在悬浮窗下面、NX 上面一层，模板页的色键区域就透出这层浅灰（`TplBackColor` / `TplBackOpacity` 两个常量可调）。
+「加工参数」页仍是**全透明**（色键抠除），只留文字。
 
 <p align="center">
   <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/02-template-tree.png">
@@ -109,14 +203,14 @@
   <sub>「模板」页：按模板的程序树列出工序，双击插入</sub>
 </p>
 
-**齿轮配置** — 字体、字号、行的显示 / 隐藏、行的上下排序，都在这颗齿轮里，配置存本地。
+**齿轮配置** — 字体、字号、加粗、行的显示 / 隐藏、行的上下排序，都在这颗齿轮里，配置存本地。
 
 | 模板页配置 | 参数页配置 |
 | :---: | :---: |
 | <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/03-assistant-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/03-assistant-config.png" width="430" alt="模板配置"></a> | <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/04-param-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/04-param-config.png" width="430" alt="参数配置"></a> |
-| 多模板路径管理（`cam_template.txt` 的可视化编辑） | 字体 / 字号 / 显示哪些行 / 行顺序 / 颜色 |
+| 多模板路径管理（`cam_template.txt` 的可视化编辑） | 字体 / 字号 / 加粗 / 显示哪些行 / 行顺序 / 颜色 |
 
-### 3.3 加工模板同步
+### 3.5 加工模板同步
 
 启动时比对模板 prt 的时间戳，有变化就自动重建：
 
@@ -132,7 +226,7 @@
 | --- | --- | --- |
 | 菜单栏 / 功能区看不到 | `custom_dirs.dat` 没登记，或路径写错 | 检查 `%UGII_BASE_DIR%\UGII\menus\custom_dirs.dat` 里的登记行，重启 NX |
 | 中文显示成乱码 | 菜单文件不是 GBK | 另存为 ANSI / GBK，且**不加 BOM** |
-| 按钮不显示，但菜单能点 | 功能区 `BUTTON` 写了菜单项 ID | 改成已注册的**动作 ID**（如 `LYJ_APP__cam_assistant`） |
+| 功能区按钮不显示 | `BUTTON` 写的动作 ID 在已加载的 `.men` 里没有**同名菜单项** | 动作 ID 与 `.men` 菜单项 ID 必须一致（如 `LYJ_APP__color01`），再加图标，三样齐了才显示 |
 | 功能区多出一个空组框 | 组的 `TITLE` 为空 | 每个组必须有非空名字 |
 | 点工序提示「未进入加工」 | 当前部件不在 CAM 环境 | 先进入加工模块再选工序 |
 | 编译报 DLL 无法覆盖 | NX 正占用（`GetUnloadOption` = AtTermination） | 关闭 NX 再编译 |
@@ -166,7 +260,8 @@ dotnet build 源码\LYJ\LYJ.csproj -c Release
 ```
 <LYJ_HOME>\
 ├── startup\        lyj.men / rbn_lyj*.rtb+grb / LYJ.dll
-├── application\    功能区按钮图标 lyj_*.bmp（工序图标 cam_op_*.bmp 首次启动补齐）
+├── application\    功能区按钮图标 lyj_*.bmp、Block Styler 对话框 LYJ_*.dlx
+│                   （工序图标 cam_op_*.bmp 首次启动补齐）
 └── config\         加工模板与运行时配置（首次启动自动补齐）
 ```
 
@@ -187,12 +282,13 @@ dotnet build 源码\LYJ\LYJ.csproj -c Release
 
 ## 七、功能区结构与二次开发
 
-只有一个选项卡 **LYJ**（`rbn_lyj.rtb`），由三个组文件拼成：
+只有一个选项卡 **LYJ**（`rbn_lyj.rtb`），由四个组文件拼成：
 
 | 组文件 | 组名 | 内容 |
 | --- | --- | --- |
-| `rbn_lyj_import.grb` | 图档导入 | STL / STP / IGS / X_T |
-| `rbn_lyj_export.grb` | 图档导出 | STL / STP / IGS / X_T |
+| `rbn_lyj_import.grb` | 图档导入 | 单个「导入图档」按钮（按扩展名自动匹配 20 余种格式） |
+| `rbn_lyj_export.grb` | 图档导出 | 单个「导出图档」下拉菜单（STL / STP / IGS / X_T） |
+| `rbn_lyj_color.grb` | 显示 | 固定 12 个只有图标的中号按钮（48×48 色块）：透明化 + 颜色 1~10（默认配好 5 个）+ 配置；`config\color_slots.txt` 只决定每个槽的颜色与是否可用 |
 | `rbn_lyj_cam.grb` | 加工 | 加工助手（悬浮窗） |
 
 「加工助手」是加工功能的唯一入口：**功能区不占按钮位置**，工序插入在悬浮窗的「模板」页双击完成。
@@ -228,20 +324,21 @@ dotnet build 源码\LYJ\LYJ.csproj -c Release
 ```powershell
 # 编译 → 收集 → payload.zip → 编译安装器 → 输出到 打包输出\dist
 .\打包输出\build_release.ps1                     # 素材全在 资源\，不依赖任何已部署目录
-.\打包输出\build_release.ps1 -Major 1 -Minor 0    # 自定义版本号前缀
+.\打包输出\build_release.ps1 -Major 1 -Minor 1    # 自定义版本号前缀（默认就是 1.1）
 ```
 
 打包素材全部来自仓库内，和本机部署状态无关：
 
 | 素材 | 位置 |
 | --- | --- |
-| 菜单 / 功能区 / 组文件 | `资源\菜单功能区\lyj.men`、`rbn_lyj*.rtb/grb` |
-| 功能区按钮图标（9 张） | `资源\按钮图标\lyj_*.bmp`（60×60 BMP） |
+| 菜单 / 功能区 / 组文件 | `资源\菜单功能区\lyj.men`、`rbn_lyj*.rtb/grb`（4 个组文件） |
+| 功能区按钮图标（19 张） | `资源\按钮图标\lyj_*.bmp`（大按钮 60×60；显示组的透明化 / 颜色 1~10 / 配置是 48×48 中号色块） |
+| Block Styler 对话框 | `资源\对话框\*.dlx` |
 | 加工模板 | `资源\加工模板\测试.prt`（自备，不入库） |
 | 主程序 | 打包时现编译的 `源码\LYJ\bin\Release\LYJ.dll` |
 
 产生物命名：`LYJ安装程序_V<主>.<次>.<yyMMdd-HHmm>.exe`。
-**上传 GitHub Release 前请改成英文名**（如 `LYJ-Setup-V1.0.261107-2005.exe`），GitHub 会把附件名里的中文替换成点号。
+**上传 GitHub Release 前请改成英文名**（如 `LYJ-Setup-V1.1.261113-2140.exe`），GitHub 会把附件名里的中文替换成点号。
 
 安装器自测（纯逻辑，不需要 NX）：
 
@@ -263,6 +360,13 @@ NX Open 的部分成员与官方文档描述不一致，以下是本机在 **260
 - WinForms 控件取屏幕坐标必须 `ctl.PointToScreen(Point.Empty)`，传 `(ctl.Left, ctl.Bottom)` 会把手里的父容器偏移重复加一遍
 - 悬浮窗里做下拉框要用**独立无边框窗体** + `ShowWithoutActivation` + `WS_EX_NOACTIVATE`，
   子控件会被悬浮窗客户区裁掉
+- **Block Styler 的托管类型在 `NXOpenUI.dll`，不在 `NXOpen.dll`**（后者只有 `BlockStyler.NamespaceDoc`）；
+  `UI.CreateDialog` 同样定义在 `NXOpenUI.dll`
+- `.dlx` 没有公开的最小可写格式，最稳的做法是拿 NX 自带的分块模板拼装
+  （`NXCAE_EXTRAS\nxrsimc_wntx64\x_plugin\snapy\nx\gui\templates\` 下的 `dialog/group/select_object/double.dlx`）
+- `.dlx` 里属性 `id` 与 `sname` 常不同名（`id="LimitsVisibility" sname="ScaleLimits"`），按 `id` 改；
+  且 `Title` 属性多次出现，必须在插入子块**之前**改，否则会命中子块的同名属性
+- `DisplayModification` 没有公共构造函数，只能 `Session.DisplayManager.NewDisplayModification()`，用完 `Dispose()`
 
 欢迎 PR 补充。
 
@@ -301,10 +405,11 @@ Issue 与 PR 都欢迎。提交前请确保：
 | --- | --- |
 | `源码\LYJ\` | 主程序 C# 工程。目录名与程序集名一致，保持英文以免影响 `dotnet build` 与 VS 识别 |
 | `源码\安装器\` | 安装程序工程；`自测\` 是纯逻辑测试（不依赖 NX） |
-| `资源\菜单功能区\` | `lyj.men`、`rbn_lyj.rtb` 与三个 `.grb` 组文件（GBK 无 BOM） |
-| `资源\按钮图标\` | 功能区 9 张 60×60 BMP |
+| `资源\菜单功能区\` | `lyj.men`、`rbn_lyj.rtb` 与四个 `.grb` 组文件（GBK 无 BOM） |
+| `资源\按钮图标\` | 功能区 19 张 BMP（导入 / 导出各合并为一张 60×60 auto 图标；显示组的透明化 / 颜色 1~10 / 配置是 48×48 中号纯色块，程序启动时会按配置重画） |
+| `资源\对话框\` | Block Styler 对话框定义 `LYJ_Transparency.dlx`（UTF-8） |
 | `资源\加工模板\` | 加工模板 prt（使用者自备，不入库） |
-| `工具脚本\` | `gen_icon.py` 生成安装包图标、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`图标清单.txt` |
+| `工具脚本\` | `gen_icon.py` 生成安装包图标、`gen_ribbon_icon.py` 生成功能区位图、`gen_transparency_dialog.py` / `gen_color_config_dialog.py` 生成对话框（共用 `dlx_common.py`）、`gen_block_templates.py` 从 NX 官方 .dlx 抽块模板、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`rebuild_payload.py` 重建安装包载荷、`图标清单.txt` |
 | `文档\` | 安装包依带的 `使用说明.txt` |
 | `打包输出\` | `build_release.ps1`；运行时生成 `build\`（中间件）与 `dist\`（安装包） |
 | `内部归档\` | **不入库**：工序参数数据表、参数分析脚本、第三方图标生成小工具 |

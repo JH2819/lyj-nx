@@ -1,4 +1,4 @@
-// Copyright 2026 The LYJ Authors
+﻿// Copyright 2026 The LYJ Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -63,13 +63,15 @@ namespace NxToolboxSetup.Test
 
             Console.WriteLine("== 1. 释放 payload ==");
             int n = SetupCore.ExtractPayload(install, log);
-            Check(n >= 14 && n <= 24, "释放文件数 = " + n + "（精简包）");
+            Check(n >= 20 && n <= 30, "释放文件数 = " + n + "（精简包）");
             Check(File.Exists(Path.Combine(install, @"startup\LYJ.dll")), "startup\\LYJ.dll 存在");
             Check(File.Exists(Path.Combine(install, @"startup\lyj.men")), "startup\\lyj.men 存在");
             Check(File.Exists(Path.Combine(install, @"startup\rbn_lyj.rtb")), "LYJ 选项卡已打包");
             Check(File.Exists(Path.Combine(install, @"startup\rbn_lyj_import.grb")), "图档导入组已打包");
             Check(File.Exists(Path.Combine(install, @"startup\rbn_lyj_export.grb")), "图档导出组已打包");
             Check(File.Exists(Path.Combine(install, @"startup\rbn_lyj_cam.grb")), "加工组（加工助手）已打包");
+            Check(File.Exists(Path.Combine(install, @"startup\rbn_lyj_color.grb")), "显示组（透明化 + 颜色）已打包");
+            Check(!File.Exists(Path.Combine(install, @"startup\rbn_lyj_transparency.grb")), "旧的独立透明化组不再打包");
             Check(!File.Exists(Path.Combine(install, @"startup\rbn_nxprogramming.rtb")), "旧 NX-编程 选项卡不再打包");
             Check(!File.Exists(Path.Combine(install, @"startup\rbn_nxprogramming_tools.grb")), "旧 工具 组不再打包");
             Check(!File.Exists(Path.Combine(install, @"startup\rbn_lyj_systools.grb")), "旧 LYJ-系统工具组 不再打包");
@@ -83,7 +85,42 @@ namespace NxToolboxSetup.Test
             Check(!Directory.Exists(Path.Combine(install, @"config\BMP")), "图标素材目录 config\\BMP 不再打包");
             Check(Directory.GetFiles(Path.Combine(install, "application"), "cam_op_*.bmp").Length == 0, "加工策略图标不打包");
             Check(Directory.GetFiles(Path.Combine(install, "application"), "cam_grp_*.bmp").Length == 0, "策略文件夹图标不打包");
-            Check(Directory.GetFiles(Path.Combine(install, "application"), "lyj_*.bmp").Length == 9, "功能区按钮图标 9 个");
+            Check(Directory.GetFiles(Path.Combine(install, "application"), "lyj_*.bmp").Length == 19, "功能区按钮图标 19 个");
+            Check(File.Exists(Path.Combine(install, @"application\lyj_import_auto.bmp")), "导入图档图标存在");
+            Check(File.Exists(Path.Combine(install, @"application\lyj_export_auto.bmp")), "导出图档图标存在");
+            Check(File.Exists(Path.Combine(install, @"application\lyj_transparency.bmp")), "透明化图标存在");
+            for (int i = 1; i <= 10; i++)
+                Check(File.Exists(Path.Combine(install, string.Format(@"application\lyj_color_{0:00}.bmp", i))),
+                      "颜色图标 " + i + " 存在");
+            Check(File.Exists(Path.Combine(install, @"application\lyj_color_config.bmp")), "配置按钮图标存在");
+            Check(File.Exists(Path.Combine(install, @"application\LYJ_Transparency.dlx")), "透明化对话框定义已打包");
+            Check(File.Exists(Path.Combine(install, @"application\LYJ_ColorConfig.dlx")), "显示组配置对话框已打包");
+
+            // 显示组的内容：固定 12 个按钮（透明化 + 颜色 01~10 + 配置），全部「仅图标」中号按钮。
+            // 固定结构是"改颜色不用重启 NX"的前提：规模不变，只换颜色值。
+            string colorGrb = File.ReadAllText(
+                Path.Combine(install, @"startup\rbn_lyj_color.grb"), Encoding.GetEncoding("GBK"));
+            int iTrans = colorGrb.IndexOf("LYJ_APP__transparency", StringComparison.Ordinal);
+            int iColor1 = colorGrb.IndexOf("LYJ_APP__color01", StringComparison.Ordinal);
+            int iColor10 = colorGrb.IndexOf("LYJ_APP__color10", StringComparison.Ordinal);
+            int iCfg = colorGrb.IndexOf("LYJ_APP__color_config", StringComparison.Ordinal);
+            Check(iTrans > 0 && iColor1 > iTrans, "透明化排在显示组第一位");
+            Check(iColor10 > iColor1 && iCfg > iColor10, "颜色 01~10 顺序正确、配置按钮排最后");
+            Check(colorGrb.Split(new[] { "BUTTON " }, StringSplitOptions.None).Length - 1 == 12,
+                  "显示组固定 12 个按钮");
+            Check(colorGrb.Contains("RIBBON_STYLE MEDIUM_IMAGE"), "显示组按钮为中号样式");
+            Check(!colorGrb.Contains("_AND_TEXT"), "显示组按钮只显示图标、不带文字标签");
+            Check(!colorGrb.Contains("ALWAYS_LARGE_IMAGE"), "显示组没有大号按钮");
+
+            // 菜单里必须为每个颜色按钮登记同名菜单项，否则功能区那个按钮不显示（NX 的硬要求）
+            string men = File.ReadAllText(
+                Path.Combine(install, @"startup\lyj.men"), Encoding.GetEncoding("GBK"));
+            int menuHits = 0;
+            for (int i = 1; i <= 10; i++)
+                if (men.Contains("BUTTON " + string.Format("LYJ_APP__color{0:00}", i))
+                    && men.Contains("ACTIONS " + string.Format("LYJ_APP__color{0:00}", i)))
+                    menuHits++;
+            Check(menuHits == 10, "菜单为 10 个颜色按钮登记了同名菜单项（按钮才能显示）");
             Check(!File.Exists(Path.Combine(install, @"config\cam_strategies.stamp")), "时间戳未打包（首次启动会重新生成）");
             Check(File.Exists(Path.Combine(install, "install_dir.txt")), "写入 install_dir.txt");
 
@@ -91,10 +128,26 @@ namespace NxToolboxSetup.Test
             File.WriteAllText(Path.Combine(install, @"startup\nxtools.men"), "# stale");
             File.WriteAllText(Path.Combine(install, @"startup\NXTools.dll"), "stale");
             File.WriteAllText(Path.Combine(install, @"application\nxtools_import_stl.bmp"), "stale");
+            // 旧版四张导入图标（已合并为 lyj_import_auto.bmp），重装时必须被清掉
+            File.WriteAllText(Path.Combine(install, @"application\lyj_import_stl.bmp"), "stale");
+            File.WriteAllText(Path.Combine(install, @"application\lyj_import_stp.bmp"), "stale");
+            File.WriteAllText(Path.Combine(install, @"application\lyj_import_igs.bmp"), "stale");
+            File.WriteAllText(Path.Combine(install, @"application\lyj_import_xt.bmp"), "stale");
+            // 透明化已并入「显示」组，旧的独立组文件重装时必须被清掉
+            File.WriteAllText(Path.Combine(install, @"startup\rbn_lyj_transparency.grb"), "stale");
+            // 上一版写死名字的五个颜色图标，重装时必须被清掉（现在按槽位编号 lyj_color_01..10）
+            foreach (string c in new[] { "blue", "green", "gray", "white", "black" })
+                File.WriteAllText(Path.Combine(install, @"application\lyj_color_" + c + ".bmp"), "stale");
             SetupCore.ExtractPayload(install, log);
             Check(!File.Exists(Path.Combine(install, @"startup\nxtools.men")), "旧 nxtools.men 已清理");
             Check(!File.Exists(Path.Combine(install, @"startup\NXTools.dll")), "旧 NXTools.dll 已清理");
             Check(!File.Exists(Path.Combine(install, @"application\nxtools_import_stl.bmp")), "旧 nxtools_*.bmp 已清理");
+            Check(!File.Exists(Path.Combine(install, @"startup\rbn_lyj_transparency.grb")), "旧透明化组已清理");
+            Check(!File.Exists(Path.Combine(install, @"application\lyj_import_stl.bmp")), "旧导入图标 lyj_import_stl.bmp 已清理");
+            Check(!File.Exists(Path.Combine(install, @"application\lyj_import_xt.bmp")), "旧导入图标 lyj_import_xt.bmp 已清理");
+            Check(!File.Exists(Path.Combine(install, @"application\lyj_color_blue.bmp")), "旧颜色图标 lyj_color_blue.bmp 已清理");
+            Check(File.Exists(Path.Combine(install, @"application\lyj_import_auto.bmp")), "新导入图标未被误删");
+            Check(File.Exists(Path.Combine(install, @"application\lyj_export_auto.bmp")), "新导出图标未被误删");
             Check(File.Exists(Path.Combine(install, @"startup\LYJ.dll")), "清理后新文件仍在");
 
             Console.WriteLine("== 2. 登记 custom_dirs.dat ==");

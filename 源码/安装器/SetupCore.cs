@@ -397,6 +397,11 @@ namespace NxToolboxSetup
                 @"startup\NXTools.dll", @"startup\rbn_nxprogramming.rtb",
                 @"startup\rbn_nxprogramming_insert.grb", @"startup\rbn_nxprogramming_tools.grb",
                 @"startup\rbn_lyj_systools.grb", @"startup\gen_cam_strategies.men",
+                @"startup\rbn_lyj_transparency.grb",     // 透明化已并入「显示」组（rbn_lyj_color.grb）
+                // 上一版写死名字的颜色图标：现在按槽位编号 lyj_color_01..10 由程序现画
+                @"application\lyj_color_blue.bmp", @"application\lyj_color_green.bmp",
+                @"application\lyj_color_gray.bmp", @"application\lyj_color_white.bmp",
+                @"application\lyj_color_black.bmp",
             };
             foreach (string rel in stale)
             {
@@ -413,8 +418,24 @@ namespace NxToolboxSetup
             {
                 string appDir = Path.Combine(installDir, "application");
                 if (Directory.Exists(appDir))
+                {
                     foreach (string f in Directory.GetFiles(appDir, "nxtools_*.bmp"))
                         try { File.Delete(f); } catch { }
+                    // 导入按钮已合并为 lyj_import_auto.bmp，旧的四张导入图标不再被引用。
+                    // 这里必须逐个精确删，不能用 lyj_import_*.bmp 通配（会把新图标一起删掉）。
+                    foreach (string old in new[] { "lyj_import_stl.bmp", "lyj_import_stp.bmp",
+                                                   "lyj_import_igs.bmp", "lyj_import_xt.bmp" })
+                    {
+                        string p = Path.Combine(appDir, old);
+                        try
+                        {
+                            if (!File.Exists(p)) continue;
+                            File.Delete(p);
+                            log.AppendLine("  已清理旧版导入图标：" + old);
+                        }
+                        catch { }
+                    }
+                }
             }
             catch { }
 

@@ -57,14 +57,22 @@ namespace LYJ
 
                 // 菜单 ACTIONS 代号 -> 回调方法（与 lyj.men 中一致）
                 // 统一走 AddSafeAction：老版本 NX 缺少新 API 时给中文提示，而不是抛 .NET 异常。
-                AddSafeAction(mbm, "LYJ_APP__import_stl", ImportStlCallback, "导入STL");
-                AddSafeAction(mbm, "LYJ_APP__import_stp", ImportStpCallback, "导入STP/STEP");
-                AddSafeAction(mbm, "LYJ_APP__import_igs", ImportIgsCallback, "导入IGS");
-                AddSafeAction(mbm, "LYJ_APP__import_xt", ImportXtCallback, "导入X_T");
+                AddSafeAction(mbm, "LYJ_APP__import_auto", ImportAutoCallback, "导入图档");
                 AddSafeAction(mbm, "LYJ_APP__export_stl", ExportStlCallback, "导出STL");
                 AddSafeAction(mbm, "LYJ_APP__export_stp", ExportStpCallback, "导出STP/STEP");
                 AddSafeAction(mbm, "LYJ_APP__export_igs", ExportIgsCallback, "导出IGS");
                 AddSafeAction(mbm, "LYJ_APP__export_xt", ExportXtCallback, "导出X_T");
+
+                // 部件显示：透明化（原生 Block Styler 对话框）+ 可配置的颜色按钮（默认五个）
+                AddSafeAction(mbm, "LYJ_APP__transparency", TransparencyCallback, "透明化");
+                for (int i = 0; i < ColorSlots.Max; i++)
+                {
+                    int slot = i;                                   // 闭包要抓当前值
+                    AddSafeAction(mbm, ColorActionId(slot),
+                        delegate (MenuButtonEvent ev) { return ColorSlotCallback(slot); },
+                        "部件颜色 " + (slot + 1));
+                }
+                AddSafeAction(mbm, "LYJ_APP__color_config", ColorConfigCallback, "配置颜色按钮");
 
                 // 加工：模板同步（内部调用）+ 工序策略回调（自动生成）+ 加工助手悬浮窗
                 AddSafeAction(mbm, "LYJ_APP__cam_refresh", CamRefreshCallback, "刷新编程模板");
@@ -81,10 +89,116 @@ namespace LYJ
 
 
         /// <summary>
-        /// “导入STL” 按钮：一键导入 STL 并转换为收敛体。
+        /// “导入图档” 唯一入口：选一个文件，按扩展名自动挑对应的导入器。
+        /// 覆盖 NX 原生「文件 → 导入」里的全部图档格式：
+        ///   NX 部件 / STEP(203/214/242) / IGES / Parasolid / CATIA V4、V5、3DXML /
+        ///   Creo(Pro-E) / DXF-DWG / ACIS / Rhino / Inventor / STL / 3MF / OBJ /
+        ///   VRML / IFC / Revit / G3D / I-deas / ASC / Geospatial / CGM。
+        /// </summary>
+        private static MenuBarManager.CallbackStatus ImportAutoCallback(MenuButtonEvent buttonEvent)
+        {
+            try
+            {
+                string file = PickFile(BuildImportFilter(),
+                    "选择要导入的图档（按扩展名自动匹配导入器）");
+                if (file == null)
+                    return MenuBarManager.CallbackStatus.Cancel;        // 用户取消
+
+                // 按扩展名分派（统一小写；Creo 的 .prt.1 版本号后缀一并归一）
+                string ext = NormalizeImportExt(file);
+                switch (ext)
+                {
+                    case ".stl":
+                        return ImportStlFrom(file);
+                    case ".stp":
+                    case ".step":
+                        return ImportStepFrom(file);
+                    case ".igs":
+                    case ".iges":
+                        return ImportIgesFrom(file);
+                    case ".x_t":
+                    case ".x_b":
+                    case ".xmt_txt":
+                    case ".xmt_bin":
+                        return ImportParasolidFrom(file);
+                    case ".prt":
+                    case ".asm":
+                        // .prt 既可能是 NX 部件，也可能是 Creo 部件：按文件头判别
+                        return IsNxPartFile(file) ? ImportNxPartFrom(file) : ImportCreoFrom(file);
+                    case ".xpr":
+                    case ".xas":
+                    case ".neu":
+                        return ImportCreoFrom(file);
+                    case ".catpart":
+                    case ".catproduct":
+                        return ImportCatiaV5From(file);
+                    case ".model":
+                    case ".exp":
+                    case ".session":
+                    case ".dlv":
+                        return ImportCatiaV4From(file);
+                    case ".3dxml":
+                        return Import3DXmlFrom(file);
+                    case ".dxf":
+                    case ".dwg":
+                        return ImportDxfDwgFrom(file);
+                    case ".sat":
+                    case ".sab":
+                    case ".asat":
+                        return ImportAcisFrom(file);
+                    case ".3dm":
+                        return ImportRhinoFrom(file);
+                    case ".ipt":
+                    case ".iam":
+                        return ImportInventorFrom(file);
+                    case ".3mf":
+                        return Import3MfFrom(file);
+                    case ".obj":
+                        return ImportObjFrom(file);
+                    case ".wrl":
+                    case ".vrml":
+                        return ImportVrmlFrom(file);
+                    case ".ifc":
+                        return ImportIfcFrom(file);
+                    case ".rvt":
+                        return ImportRevitFrom(file);
+                    case ".g3d":
+                        return ImportG3dFrom(file);
+                    case ".mf1":
+                    case ".arc":
+                    case ".unv":
+                    case ".pkg":
+                        return ImportIdeasFrom(file);
+                    case ".asc":
+                        return ImportAscFrom(file);
+                    case ".shp":
+                        return ImportGeospatialFrom(file);
+                    case ".cgm":
+                        return ImportCgmFrom(file);
+                    default:
+                        theUI.NXMessageBox.Show("不支持的文件类型",
+                            NXMessageBox.DialogType.Warning,
+                            "无法识别的扩展名：" + (ext.Length == 0 ? "(无扩展名)" : ext) + "\r\n\r\n" +
+                            "本入口覆盖 NX 原生 文件 → 导入 里的图档格式：" +
+                            "STEP / IGES / Parasolid / CATIA / Creo / DXF-DWG / ACIS / Rhino / " +
+                            "Inventor / STL / 3MF / OBJ / VRML / IFC / Revit / 3DXML / G3D / " +
+                            "I-deas / ASC / Geospatial / CGM。\r\n\r\n" +
+                            "块、符号、点云（POINTS）等特殊对象请用 NX 自带导入。");
+                        return MenuBarManager.CallbackStatus.Continue;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+            return MenuBarManager.CallbackStatus.Continue;
+        }
+
+        /// <summary>
+        /// 导入 STL：先导入为传统小平面体，再批量转成收敛体，最后移到指定图层。
         /// 移植自 ImportSTL_Journal.vb（NX 2606 验证过的 API）。
         /// </summary>
-        private static MenuBarManager.CallbackStatus ImportStlCallback(MenuButtonEvent buttonEvent)
+        private static MenuBarManager.CallbackStatus ImportStlFrom(string stlFilePath)
         {
             try
             {
@@ -95,19 +209,7 @@ namespace LYJ
                 var originalBodyOption = ConvertFacetBodyBuilder.OriginalBodyOptions.Delete;
                 // ==================== 以下为执行逻辑 ====================
 
-                // 1. 弹出文件对话框选择 STL 文件
-                string stlFilePath;
-                using (OpenFileDialog ofd = new OpenFileDialog())
-                {
-                    ofd.Title = "选择要导入的 STL 文件";
-                    ofd.Filter = "STL 文件 (*.stl)|*.stl|所有文件 (*.*)|*.*";
-                    ofd.RestoreDirectory = true;
-                    if (ofd.ShowDialog() != DialogResult.OK)
-                        return MenuBarManager.CallbackStatus.Cancel;   // 用户取消
-                    stlFilePath = ofd.FileName;
-                }
-
-                // 2. 文件存在性校验
+                // 1. 文件存在性校验
                 if (!File.Exists(stlFilePath))
                 {
                     theUI.NXMessageBox.Show("错误", NXMessageBox.DialogType.Error,
@@ -115,7 +217,7 @@ namespace LYJ
                     return MenuBarManager.CallbackStatus.Continue;
                 }
 
-                // 3. 取得当前工作部件
+                // 2. 取得当前工作部件
                 Part workPart = theSession.Parts.Work;
                 if (workPart == null)
                 {
@@ -124,12 +226,12 @@ namespace LYJ
                     return MenuBarManager.CallbackStatus.Continue;
                 }
 
-                // 4. 导入前，记录当前已有小平面体（用于对比识别新导入的体）
+                // 3. 导入前，记录当前已有小平面体（用于对比识别新导入的体）
                 var beforeBodies = new List<FacetedBody>();
                 foreach (FacetedBody body in workPart.FacetedBodies)
                     beforeBodies.Add(body);
 
-                // 5. 第 1 步：导入 STL 为传统 Nx 小平面体
+                // 4. 第 1 步：导入 STL 为传统 Nx 小平面体
                 STLImportBuilder builder = null;
                 bool importOK = false;
                 try
@@ -154,13 +256,13 @@ namespace LYJ
                 if (!importOK)
                     return MenuBarManager.CallbackStatus.Continue;
 
-                // 6. 导入后对比，找出本次新导入的小平面体
+                // 5. 导入后对比，找出本次新导入的小平面体
                 var imported = new List<FacetedBody>();
                 foreach (FacetedBody body in workPart.FacetedBodies)
                     if (!beforeBodies.Contains(body))
                         imported.Add(body);
 
-                // 7. 第 2 步：将每个小平面体转换为收敛体
+                // 6. 第 2 步：将每个小平面体转换为收敛体
                 var converted = new List<NXObject>();
                 foreach (FacetedBody body in imported)
                 {
@@ -187,7 +289,7 @@ namespace LYJ
                     }
                 }
 
-                // 8. 移动到指定图层
+                // 7. 移动到指定图层
                 if (targetLayer > 0 && converted.Count > 0)
                 {
                     foreach (NXObject obj in converted)
@@ -198,7 +300,7 @@ namespace LYJ
                     }
                 }
 
-                // 9. 完成提示：写入 NX 窗口底部状态栏（不弹窗）
+                // 8. 完成提示：写入 NX 窗口底部状态栏（不弹窗）
                 UFSession.GetUFSession().Ui.SetStatus(
                     "成功导入 " + imported.Count + " 个 STL，转换为 " + converted.Count + " 个收敛体。");
             }
@@ -210,18 +312,12 @@ namespace LYJ
         }
 
         /// <summary>
-        /// “导入STP/STEP” 按钮：自动识别 AP203/AP214/AP242 并导入到当前工作部件。
+        /// 导入 STEP：读文件头 FILE_SCHEMA 识别 AP203 / AP214 / AP242，挑对应导入器。
         /// </summary>
-        private static MenuBarManager.CallbackStatus ImportStpCallback(MenuButtonEvent buttonEvent)
+        private static MenuBarManager.CallbackStatus ImportStepFrom(string stpFile)
         {
             try
             {
-                string stpFile = PickFile(
-                    "STEP 文件 (*.stp;*.step)|*.stp;*.step|所有文件 (*.*)|*.*",
-                    "选择要导入的 STEP 文件");
-                if (stpFile == null)
-                    return MenuBarManager.CallbackStatus.Cancel;
-
                 Part workPart = RequireWorkPart();
                 if (workPart == null || !EnsureImportTargetReady(workPart))
                     return MenuBarManager.CallbackStatus.Continue;
@@ -300,18 +396,12 @@ namespace LYJ
         }
 
         /// <summary>
-        /// “导入IGS” 按钮：导入 IGES 文件到当前工作部件。
+        /// 导入 IGES 到当前工作部件。
         /// </summary>
-        private static MenuBarManager.CallbackStatus ImportIgsCallback(MenuButtonEvent buttonEvent)
+        private static MenuBarManager.CallbackStatus ImportIgesFrom(string igsFile)
         {
             try
             {
-                string igsFile = PickFile(
-                    "IGES 文件 (*.igs;*.iges)|*.igs;*.iges|所有文件 (*.*)|*.*",
-                    "选择要导入的 IGES 文件");
-                if (igsFile == null)
-                    return MenuBarManager.CallbackStatus.Cancel;
-
                 Part workPart = RequireWorkPart();
                 if (workPart == null || !EnsureImportTargetReady(workPart))
                     return MenuBarManager.CallbackStatus.Continue;
@@ -394,18 +484,12 @@ namespace LYJ
         }
 
         /// <summary>
-        /// “导入X_T” 按钮：导入 Parasolid (X_T) 文件到当前工作部件。
+        /// 导入 Parasolid（.x_t / .xmt_txt）到当前工作部件。
         /// </summary>
-        private static MenuBarManager.CallbackStatus ImportXtCallback(MenuButtonEvent buttonEvent)
+        private static MenuBarManager.CallbackStatus ImportParasolidFrom(string xtFile)
         {
             try
             {
-                string xtFile = PickFile(
-                    "Parasolid 文件 (*.x_t;*.xmt_txt)|*.x_t;*.xmt_txt|所有文件 (*.*)|*.*",
-                    "选择要导入的 X_T 文件");
-                if (xtFile == null)
-                    return MenuBarManager.CallbackStatus.Cancel;
-
                 Part workPart = RequireWorkPart();
                 if (workPart == null || !EnsureImportTargetReady(workPart))
                     return MenuBarManager.CallbackStatus.Continue;
@@ -433,6 +517,389 @@ namespace LYJ
                 ShowError(ex);
             }
             return MenuBarManager.CallbackStatus.Continue;
+        }
+
+        // ==================== 其余格式：一一对应 NX 原生「文件 → 导入」 ====================
+        //
+        // 约定（与 NX 原生导入对话框一致）：
+        //   · 一律导入到【当前工作部件】（ImportTo = WorkPart），不新开部件；
+        //   · 导入器凡是有「展平装配」选项的一律勾选（FlattenAssembly = true）；
+        //   · 凡是有「缝合」选项的一律勾选（SewSurfaces / Sew = true）；
+        //   · 其余参数保持导入器默认值。
+        //
+        // 创建入口分两类（NXOpen 的设计如此，不是笔误）：
+        //   · theSession.DexManager.CreateXxxImporter()  —— 绝大多数格式
+        //   · workPart.ImportManager.CreateXxxImporter() —— NX 部件 / STL / VRML / CGM 等
+
+        /// <summary>所有支持的图档扩展名（用于文件对话框的「所有支持的图档」筛选器）。</summary>
+        private const string ImportAllExt =
+            "*.stl;*.stp;*.step;*.igs;*.iges;*.x_t;*.x_b;*.xmt_txt;*.xmt_bin;*.prt;*.asm;*.xpr;*.xas;" +
+            "*.CATPart;*.CATProduct;*.model;*.exp;*.session;*.dlv;*.3dxml;*.dxf;*.dwg;" +
+            "*.sat;*.sab;*.asat;*.3dm;*.ipt;*.iam;*.3mf;*.obj;*.wrl;*.vrml;*.ifc;*.rvt;" +
+            "*.g3d;*.mf1;*.arc;*.unv;*.pkg;*.asc;*.shp;*.cgm";
+
+        /// <summary>
+        /// 组装「导入图档」的文件筛选器：先给一个全格式入口，再按类别分组，
+        /// 最后是常用格式的单列条目——用户既可以直接选任意支持的文件，也能按格式过滤。
+        /// </summary>
+        private static string BuildImportFilter()
+        {
+            const string cad3d =
+                "*.stp;*.step;*.igs;*.iges;*.x_t;*.x_b;*.xmt_txt;*.xmt_bin;*.prt;*.asm;*.xpr;*.xas;" +
+                "*.CATPart;*.CATProduct;*.model;*.exp;*.session;*.dlv;*.3dxml;*.sat;*.sab;*.asat;" +
+                "*.3dm;*.ipt;*.iam;*.g3d";
+            const string mesh = "*.stl;*.3mf;*.obj;*.wrl;*.vrml";
+            const string bim = "*.ifc;*.rvt";
+            const string twod = "*.dxf;*.dwg;*.cgm";
+            const string other = "*.mf1;*.arc;*.unv;*.pkg;*.asc;*.shp";
+
+            return "所有支持的图档|" + ImportAllExt
+                 + "|常用三维格式 (STEP/IGES/Parasolid/CATIA/Creo/NX/Inventor/Rhino/ACIS)|" + cad3d
+                 + "|网格面片 (STL/3MF/OBJ/VRML)|" + mesh
+                 + "|建筑模型 (IFC/Revit)|" + bim
+                 + "|二维图纸 (DXF/DWG/CGM)|" + twod
+                 + "|其他 (I-deas/ASC/Geospatial)|" + other
+                 + "|STEP (*.stp;*.step)|*.stp;*.step"
+                 + "|IGES (*.igs;*.iges)|*.igs;*.iges"
+                 + "|Parasolid (*.x_t;*.x_b;*.xmt_txt;*.xmt_bin)|*.x_t;*.x_b;*.xmt_txt;*.xmt_bin"
+                 + "|NX 部件 (*.prt)|*.prt"
+                 + "|CATIA V5 (*.CATPart;*.CATProduct)|*.CATPart;*.CATProduct"
+                 + "|CATIA V4 (*.model;*.exp;*.session;*.dlv)|*.model;*.exp;*.session;*.dlv"
+                 + "|Creo / Pro-E (*.prt;*.asm;*.xpr;*.xas)|*.prt;*.asm;*.xpr;*.xas"
+                 + "|DXF/DWG (*.dxf;*.dwg)|*.dxf;*.dwg"
+                 + "|ACIS (*.sat;*.sab;*.asat)|*.sat;*.sab;*.asat"
+                 + "|Rhino (*.3dm)|*.3dm"
+                 + "|STL (*.stl)|*.stl"
+                 + "|3MF (*.3mf)|*.3mf"
+                 + "|Wavefront OBJ (*.obj)|*.obj"
+                 + "|IFC (*.ifc)|*.ifc"
+                 + "|Revit (*.rvt)|*.rvt"
+                 + "|所有文件 (*.*)|*.*";
+        }
+
+        /// <summary>
+        /// 归一化导入用扩展名：
+        ///   · 统一小写（.STP / .Stp / .stp 视为同一格式）；
+        ///   · Creo 的版本号后缀（xxx.prt.3 / xxx.asm.7）还原成 .prt / .asm。
+        /// </summary>
+        private static string NormalizeImportExt(string file)
+        {
+            string ext = Path.GetExtension(file).ToLowerInvariant();
+
+            // .1 / .3 这类纯数字后缀 = Creo 的版本号
+            if (ext.Length > 1 && ext.Substring(1).All(char.IsDigit))
+            {
+                string inner = Path.GetExtension(Path.GetFileNameWithoutExtension(file)).ToLowerInvariant();
+                if (inner == ".prt" || inner == ".asm")
+                    return inner;
+            }
+            return ext;
+        }
+
+        /// <summary>
+        /// 判断 .prt 是 NX 部件还是 Creo 部件。
+        /// NX 部件文件头是文本魔数 "SPLMSSTR"（Siemens PLM stream，实测 NX 2606 生成的 prt 如此），
+        /// 少数场景下也可能是 OLE 复合文档；Creo 部件是纯文本（#UGC:2 PART ...）。
+        /// 两种 NX 特征都要认，否则 NX 部件会被误判成 Creo。
+        /// </summary>
+        private static bool IsNxPartFile(string file)
+        {
+            try
+            {
+                using (FileStream fs = File.OpenRead(file))
+                {
+                    byte[] head = new byte[8];
+                    if (fs.Read(head, 0, 8) < 8) return false;
+
+                    // "SPLMSSTR"
+                    if (head[0] == (byte)'S' && head[1] == (byte)'P' && head[2] == (byte)'L'
+                        && head[3] == (byte)'M' && head[4] == (byte)'S' && head[5] == (byte)'S'
+                        && head[6] == (byte)'T' && head[7] == (byte)'R')
+                        return true;
+
+                    // OLE 复合文档
+                    return head[0] == 0xD0 && head[1] == 0xCF
+                        && head[2] == 0x11 && head[3] == 0xE0;
+                }
+            }
+            catch
+            {
+                return false;   // 读不了就按 Creo 走，失败时 NX 会给明确报错
+            }
+        }
+
+        /// <summary>
+        /// 导入器统一执行壳：取工作部件 → 建导入器 → 逐项配置 → Commit → 销毁。
+        /// 所有格式共用，保证错误处理与状态栏提示一致。
+        /// </summary>
+        private static MenuBarManager.CallbackStatus RunImporter<T>(
+            string file, string displayName, Func<Part, T> create, Action<T> configure)
+            where T : Builder
+        {
+            try
+            {
+                Part workPart = RequireWorkPart();
+                if (workPart == null || !EnsureImportTargetReady(workPart))
+                    return MenuBarManager.CallbackStatus.Continue;
+
+                T importer = create(workPart);
+                configure(importer);
+                CommitImporter(importer, displayName, file);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+            return MenuBarManager.CallbackStatus.Continue;
+        }
+
+        /// <summary>
+        /// 提交导入器，并统一处理销毁与失败提示。
+        /// 单个格式失败不影响其它格式——用户可据此改用 NX 原生导入。
+        /// </summary>
+        private static void CommitImporter(Builder importer, string displayName, string file)
+        {
+            if (importer == null) return;
+            try
+            {
+                importer.Commit();
+                UFSession.GetUFSession().Ui.SetStatus(
+                    displayName + " 导入完成: " + Path.GetFileName(file));
+            }
+            catch (Exception ex)
+            {
+                theUI.NXMessageBox.Show("LYJ - " + displayName + " 导入失败",
+                    NXMessageBox.DialogType.Error,
+                    "文件：" + file + "\r\n\r\n" + ex.Message + "\r\n\r\n" +
+                    "如果反复失败，可改用 NX 自带的 文件 → 导入 → " + displayName + "。");
+            }
+            finally
+            {
+                try { importer.Destroy(); } catch { }
+            }
+        }
+
+        /// <summary>NX 部件（.prt）：把另一个部件的内容导入当前工作部件。</summary>
+        private static MenuBarManager.CallbackStatus ImportNxPartFrom(string prtFile)
+        {
+            return RunImporter(prtFile, "部件",
+                wp => wp.ImportManager.CreatePartImporter(),
+                imp =>
+                {
+                    imp.FileName = prtFile;
+                    imp.LayerOption = PartImporter.LayerOptionType.Work;   // 放到工作图层
+                    imp.Scale = 1.0;
+                });
+        }
+
+        /// <summary>Creo / Pro-E（.prt .asm .xpr .xas）：导入到工作部件。</summary>
+        private static MenuBarManager.CallbackStatus ImportCreoFrom(string file)
+        {
+            return RunImporter(file, "Creo",
+                wp => theSession.DexManager.CreateCreoImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = CreoImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>CATIA V4（.model .exp .session .dlv）。</summary>
+        private static MenuBarManager.CallbackStatus ImportCatiaV4From(string file)
+        {
+            return RunImporter(file, "CATIA V4",
+                wp => theSession.DexManager.CreateCatiav4Importer(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                });
+        }
+
+        /// <summary>CATIA V5（.CATPart .CATProduct）：导入到工作部件。</summary>
+        private static MenuBarManager.CallbackStatus ImportCatiaV5From(string file)
+        {
+            return RunImporter(file, "CATIA V5",
+                wp => theSession.DexManager.CreateCatiav5Importer(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = Catiav5Importer.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>CATIA V6 / 3DXML（.3dxml）。</summary>
+        private static MenuBarManager.CallbackStatus Import3DXmlFrom(string file)
+        {
+            return RunImporter(file, "3DXML",
+                wp => theSession.DexManager.CreateThreedxmlImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = ThreeDXMLImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>DXF / DWG（.dxf .dwg）：二维图纸与三维模型都能导入工作部件。</summary>
+        private static MenuBarManager.CallbackStatus ImportDxfDwgFrom(string file)
+        {
+            return RunImporter(file, "DXF/DWG",
+                wp => theSession.DexManager.CreateDxfdwgImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = DxfdwgImporter.ImportToEnum.Work;
+                });
+        }
+
+        /// <summary>ACIS（.sat .sab .asat）：缝合选项勾选。</summary>
+        private static MenuBarManager.CallbackStatus ImportAcisFrom(string file)
+        {
+            return RunImporter(file, "ACIS",
+                wp => theSession.DexManager.CreateAcisImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.Sew = true;                  // 勾选：自动缝合
+                });
+        }
+
+        /// <summary>Rhino（.3dm）：曲线 / 曲面 / 实体 / 网格都导入。</summary>
+        private static MenuBarManager.CallbackStatus ImportRhinoFrom(string file)
+        {
+            return RunImporter(file, "Rhino",
+                wp => theSession.DexManager.CreateRhinoImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = RhinoImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>Autodesk Inventor（.ipt .iam）。</summary>
+        private static MenuBarManager.CallbackStatus ImportInventorFrom(string file)
+        {
+            return RunImporter(file, "Inventor",
+                wp => theSession.DexManager.CreateInventorImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = InventorImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>3MF（.3mf）：三维网格模型，其余参数按导入器默认。</summary>
+        private static MenuBarManager.CallbackStatus Import3MfFrom(string file)
+        {
+            return RunImporter(file, "3MF",
+                wp => theSession.DexManager.CreateImporter3mf(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                });
+        }
+
+        /// <summary>Wavefront OBJ（.obj）：按收敛体导入。</summary>
+        private static MenuBarManager.CallbackStatus ImportObjFrom(string file)
+        {
+            return RunImporter(file, "OBJ",
+                wp => theSession.DexManager.CreateWavefrontObjImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = WavefrontObjImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>VRML（.wrl .vrml）：走部件级的导入器（FileName，不是 InputFile）。</summary>
+        private static MenuBarManager.CallbackStatus ImportVrmlFrom(string file)
+        {
+            return RunImporter(file, "VRML",
+                wp => wp.ImportManager.CreateVrmlImporter(),
+                imp =>
+                {
+                    imp.FileName = file;
+                });
+        }
+
+        /// <summary>IFC（.ifc）：展平装配选项勾选。</summary>
+        private static MenuBarManager.CallbackStatus ImportIfcFrom(string file)
+        {
+            return RunImporter(file, "IFC",
+                wp => theSession.DexManager.CreateIfcImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = IfcImporter.ImportToOption.WorkPart;
+                    imp.FlattenAssembly = true;      // 勾选：展平装配
+                });
+        }
+
+        /// <summary>Revit（.rvt）。</summary>
+        private static MenuBarManager.CallbackStatus ImportRevitFrom(string file)
+        {
+            return RunImporter(file, "Revit",
+                wp => theSession.DexManager.CreateRevitImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = RevitImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>G3D（.g3d）。</summary>
+        private static MenuBarManager.CallbackStatus ImportG3dFrom(string file)
+        {
+            return RunImporter(file, "G3D",
+                wp => theSession.DexManager.CreateG3dImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                    imp.ImportTo = G3DImporter.ImportToOption.WorkPart;
+                });
+        }
+
+        /// <summary>I-deas 部件（.mf1 .arc .unv .pkg）。</summary>
+        private static MenuBarManager.CallbackStatus ImportIdeasFrom(string file)
+        {
+            return RunImporter(file, "I-deas",
+                wp => theSession.DexManager.CreateBdsImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                });
+        }
+
+        /// <summary>ASC（.asc）：点 / 几何数据。</summary>
+        private static MenuBarManager.CallbackStatus ImportAscFrom(string file)
+        {
+            return RunImporter(file, "ASC",
+                wp => theSession.DexManager.CreateAscImporter(),
+                imp =>
+                {
+                    imp.InputFile = file;
+                });
+        }
+
+        /// <summary>Geospatial（.shp 等地理数据）：走 FileName 属性。</summary>
+        private static MenuBarManager.CallbackStatus ImportGeospatialFrom(string file)
+        {
+            return RunImporter(file, "Geospatial",
+                wp => theSession.DexManager.CreateGeospatialDataImporter(),
+                imp =>
+                {
+                    imp.FileName = file;
+                });
+        }
+
+        /// <summary>CGM（.cgm）：二维图，走部件级导入器。</summary>
+        private static MenuBarManager.CallbackStatus ImportCgmFrom(string file)
+        {
+            return RunImporter(file, "CGM",
+                wp => wp.ImportManager.CreateCgmImporter(),
+                imp =>
+                {
+                    imp.FileName = file;
+                });
         }
 
         /// <summary>
@@ -662,6 +1129,55 @@ namespace LYJ
             return MenuBarManager.CallbackStatus.Continue;
         }
 
+        // ==================== 部件显示：透明化 + 固定颜色 ====================
+
+        /// <summary>「透明化」：打开原生对话框（上面选部件，下面透明度滑条）。</summary>
+        private static MenuBarManager.CallbackStatus TransparencyCallback(MenuButtonEvent buttonEvent)
+        {
+            DisplayTools.ShowTransparencyDialog();
+            return MenuBarManager.CallbackStatus.Continue;
+        }
+
+        // 「显示」组的颜色按钮：固定 10 颗，颜色每次点击时从 config\color_slots.txt 现读，
+        // 所以在配置窗口里改完颜色**不用重启 NX**，回到图形区直接点就能用新颜色。
+        private static string ColorActionId(int slot)
+        {
+            // 两位编号：color01…color10 —— 一位数会有 color1/color10 的前缀歧义
+            return "LYJ_APP__color" + (slot + 1).ToString("00");
+        }
+
+        private static MenuBarManager.CallbackStatus ColorSlotCallback(int slot)
+        {
+            try
+            {
+                DisplayGroupCfg cfg = DisplayGroupCfg.Load();
+                ColorSlot s = (cfg.Slots != null && slot < cfg.Slots.Length) ? cfg.Slots[slot] : null;
+
+                if (s == null || !s.Enabled)
+                {
+                    // 空位（图标是个「＋」）：直接带去配置窗口，比弹一句提示有用
+                    ColorConfigDialog.Show();
+                    return MenuBarManager.CallbackStatus.Continue;
+                }
+
+                string colorName = s.ColorName;
+                if (string.IsNullOrEmpty(colorName)) colorName = ColorSlots.EnglishName(s.Name);
+                DisplayTools.ApplyColorSlot(s.ColorId, colorName, new[] { s.R, s.G, s.B }, s.Name);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+            return MenuBarManager.CallbackStatus.Continue;
+        }
+
+        /// <summary>「配置」按钮：打开 NX 原生对话框，用内置色盘配置最多 10 个颜色按钮。</summary>
+        private static MenuBarManager.CallbackStatus ColorConfigCallback(MenuButtonEvent e)
+        {
+            ColorConfigDialog.Show();
+            return MenuBarManager.CallbackStatus.Continue;
+        }
+
         /// <summary>
         /// 导出前确保有显示部件。
         /// </summary>
@@ -843,9 +1359,9 @@ namespace LYJ
                     {
                         try
                         {
-                            // STL 收敛体导入有明确替代路径，单独给提示
-                            string extra = (featureName == "导入STL")
-                                ? "\r\n\r\n请改用：文件 → 导入 → STL，或用 导入STP/X_T 代替。"
+                            // 导入类按钮有明确替代路径，单独给提示
+                            string extra = featureName.StartsWith("导入", StringComparison.Ordinal)
+                                ? "\r\n\r\n可以改用：文件 → 导入 → 对应格式。"
                                 : "\r\n\r\n可以改用 NX 自带命令完成。";
                             theUI.NXMessageBox.Show("LYJ - " + featureName,
                                 NXMessageBox.DialogType.Warning,
@@ -885,6 +1401,11 @@ namespace LYJ
 
         /// <summary>供加工助手（MachAssistantForm）复用：部署根目录。</summary>
         internal static string DeployRoot { get { return CamDeployRoot; } }
+
+        /// <summary>供「显示」组配置复用：startup / application / config 三个目录。</summary>
+        internal static string StartupDir { get { return CamStartupDir; } }
+        internal static string AppDir { get { return CamAppDir; } }
+        internal static string CfgDir { get { return CamCfgDir; } }
 
         /// <summary>供加工助手复用：当前加工模板 prt 路径（cam_template.txt 里第一个有效路径）。</summary>
         internal static string TemplatePath { get { return GetTemplatePath(); } }
@@ -1015,7 +1536,7 @@ namespace LYJ
 
         /// <summary>
         /// 运行时自愈：把安装包里没有、由程序自己生成的配置全部补齐（缺什么补什么，已有不动）。
-        /// 安装包只带 startup（菜单/功能区/DLL）+ 9 张按钮图标 + config\测试.prt，
+        /// 安装包只带 startup（菜单/功能区/DLL）+ 7 张按钮图标 + config\测试.prt，
         /// 其余靠这里在第一次启动 NX 时创建：
         ///   config\            配置目录
         ///   config\BMP\        自定义工序图标素材目录（可空，空则由内置生成器画图标）
@@ -1067,7 +1588,8 @@ namespace LYJ
                 rtb.AppendLine();
                 rtb.AppendLine("VERSION 170");
                 foreach (string g in new string[]
-                    { "rbn_lyj_import.grb", "rbn_lyj_export.grb", "rbn_lyj_cam.grb" })
+                    { "rbn_lyj_import.grb", "rbn_lyj_export.grb",
+                      "rbn_lyj_color.grb", "rbn_lyj_cam.grb" })
                 {
                     // 组文件缺失时补写：缺了组，rtb 会变成只有 TITLE 的空壳，
                     // NX 启动直接弹「在文件中构建工具条的数据不充分」。
@@ -1088,7 +1610,8 @@ namespace LYJ
             {
                 foreach (string old in new string[]
                     { OldSysToolsGrb, OldInsertGrb, "rbn_lyj_mach.grb", ToolsGrbFile,
-                      "rbn_nxprogramming.rtb", "gen_cam_strategies.men" })
+                      "rbn_nxprogramming.rtb", "gen_cam_strategies.men",
+                      "rbn_lyj_transparency.grb" })   // 透明化已并入「显示」组（rbn_lyj_color.grb）
                 {
                     string p = Path.Combine(CamStartupDir, old);
                     if (File.Exists(p))
@@ -1104,33 +1627,59 @@ namespace LYJ
         /// 组文件（.grb）不存在时补写一份标准内容。
         /// 这些组是定值资产（不随模板变化），但漏拷时会连累 rbn_lyj.rtb 变成空壳，
         /// NX 就报「在文件中构建工具条的数据不充分」。
+        /// 「显示」组例外：它按 config\color_slots.txt 生成，每次启动都重写。
         /// </summary>
         private static void EnsureGroupFile(string fileName)
         {
             string path = Path.Combine(CamStartupDir, fileName);
+            bool isDisplay = fileName.IndexOf("color", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (isDisplay)
+            {
+                WriteDisplayGroupFile(path);
+                return;
+            }
             if (File.Exists(path))
                 return;
 
             var sb = new StringBuilder();
-            if (fileName.IndexOf("import", StringComparison.OrdinalIgnoreCase) >= 0
-                || fileName.IndexOf("export", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (fileName.IndexOf("import", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                bool isImport = fileName.IndexOf("import", StringComparison.OrdinalIgnoreCase) >= 0;
-                string title = isImport ? "图档导入" : "图档导出";
-                string[] ops = isImport
-                    ? new[] { "import_stl|导入STL", "import_stp|导入STP/STEP", "import_igs|导入IGS", "import_xt|导入X_T" }
-                    : new[] { "export_stl|导出STL", "export_stp|导出STP/STEP", "export_igs|导出IGS", "export_xt|导出X_T" };
-
-                sb.Append("TITLE " + title + "\n\nVERSION 170\n");
-                foreach (string op in ops)
+                // 导入组：单个「导入图档」按钮，选文件后按扩展名自动分派
+                sb.Append("TITLE 图档导入\n\nVERSION 170\n");
+                sb.Append("\nBUTTON LYJ_APP__import_auto\n");
+                sb.Append("LABEL 导入图档\n");
+                sb.Append("BITMAP lyj_import_auto\n");
+                sb.Append("RIBBON_STYLE ALWAYS_LARGE_IMAGE\n");
+            }
+            else if (fileName.IndexOf("export", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                // 导出组：一个「导出图档」下拉按钮（CASCADE），展开四项格式。
+                // 内容与 资源\菜单功能区\rbn_lyj_export.grb 保持一致；内层 BUTTON 显式写
+                // LABEL/BITMAP，与 lyj.men 里的同名菜单项同源，免得下拉项显示成动作 ID。
+                sb.Append("TITLE 图档导出\n\nVERSION 170\n");
+                sb.Append("\nBEGIN_CASCADE LYJ_RBN_EXPORT_CASCADE\n");
+                sb.Append("RIBBON_STYLE ALWAYS_LARGE_IMAGE\n");
+                sb.Append("LABEL 导出图档\n");
+                sb.Append("BITMAP lyj_export_auto\n");
+                foreach (string[] kv in new[]
                 {
-                    string[] kv = op.Split('|');
-                    sb.Append("\n");
-                    sb.Append("BUTTON LYJ_APP__" + kv[0] + "\n");
+                    new[] { "export_stl", "导出STL" },
+                    new[] { "export_stp", "导出STP/STEP" },
+                    new[] { "export_igs", "导出IGS" },
+                    new[] { "export_xt",  "导出X_T" },
+                })
+                {
+                    sb.Append("\nBUTTON LYJ_APP__" + kv[0] + "\n");
                     sb.Append("LABEL " + kv[1] + "\n");
                     sb.Append("BITMAP lyj_" + kv[0] + "\n");
-                    sb.Append("RIBBON_STYLE ALWAYS_LARGE_IMAGE\n");
                 }
+                sb.Append("\nEND_CASCADE\n");
+            }
+            else if (fileName.IndexOf("color", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                // 走不到这里：显示组由 WriteDisplayGroupFile 按配置生成（见上面 isDisplay 分支）
+                WriteDisplayGroupFile(path);
+                return;
             }
             else
             {
@@ -1142,6 +1691,56 @@ namespace LYJ
                 sb.Append("RIBBON_STYLE ALWAYS_LARGE_IMAGE\n");
             }
             File.WriteAllText(path, sb.ToString(), Encoding.GetEncoding("GBK"));
+        }
+
+        /// <summary>
+        /// 「显示」组（rbn_lyj_color.grb）：**结构固定**写 12 个按钮
+        /// （透明化 + 颜色 1~10 + 配置，全部 RIBBON_STYLE MEDIUM_IMAGE 仅图标、中号），
+        /// 每次启动重写一次即可。
+        ///
+        /// 为什么固定而不按配置增删：NX 的功能区是启动时加载的，运行时改 .grb 不重载，
+        /// 增删按钮就得重启 NX。固定 12 个后，用户在配置里改颜色**不需要重启** ——
+        /// 颜色值是点按钮时现场从 config\color_slots.txt 读的；没配置的槽画成「＋」空位。
+        /// </summary>
+        private static void WriteDisplayGroupFile(string path)
+        {
+            DisplayGroupCfg cfg = DisplayGroupCfg.Load();
+
+            var sb = new StringBuilder();
+            sb.Append("TITLE 显示\n\nVERSION 170\n");
+
+            if (cfg.ShowTransparency)
+                AppendIconButton(sb, "LYJ_APP__transparency", "透明化", "lyj_transparency");
+
+            for (int i = 0; i < ColorSlots.Max; i++)
+            {
+                ColorSlot s = (cfg.Slots != null && i < cfg.Slots.Length) ? cfg.Slots[i] : null;
+                bool ready = s != null && s.Enabled;
+                string label = ready
+                    ? (string.IsNullOrEmpty(s.Name) ? ("颜色 " + (i + 1)) : s.Name)
+                    : ("颜色 " + (i + 1) + "（未配置）");
+                AppendIconButton(sb, ColorActionId(i), label, ColorSlots.IconName(i));
+            }
+
+            AppendIconButton(sb, "LYJ_APP__color_config", "配置颜色按钮", "lyj_color_config");
+
+            File.WriteAllText(path, sb.ToString(), Encoding.GetEncoding("GBK"));
+        }
+
+        /// <summary>显示组的一颗按钮：中号、仅图标（文字只在鼠标停留时当提示用）。</summary>
+        private static void AppendIconButton(StringBuilder sb, string actionId, string label, string bitmap)
+        {
+            sb.Append("\nBUTTON " + actionId + "\n");
+            sb.Append("LABEL " + label + "\n");
+            sb.Append("BITMAP " + bitmap + "\n");
+            sb.Append("RIBBON_STYLE MEDIUM_IMAGE\n");
+        }
+
+        /// <summary>配置对话框保存后调用：重写显示组文件（NX 下次启动生效）。</summary>
+        internal static void RebuildDisplayGroup()
+        {
+            try { WriteDisplayGroupFile(Path.Combine(CamStartupDir, "rbn_lyj_color.grb")); }
+            catch { }
         }
 
         private static string CamActionId(int index)
@@ -1439,6 +2038,27 @@ namespace LYJ
                 var map = LoadIconMap(CamIconMapFile);
                 EnsureToolIcons(map);
                 SaveIconMap(map);
+            }
+            catch { }
+
+            // 「显示」组的图标按配置现画（48×48 纯色块 / 棋盘格 / 调色板），
+            // 每次启动都重画：用户改完颜色配置重启 NX 就换成新颜色。
+            try
+            {
+                // 首次运行把默认配置落盘，用户才能用记事本看到/改它
+                if (!File.Exists(ColorSlots.CfgFile))
+                    DisplayGroupCfg.Load().Save();
+
+                ColorSlots.WriteAllIcons(DisplayGroupCfg.Load());
+
+                // 清掉上一版写死的五个颜色图标（现在按槽位编号命名）
+                foreach (string stale in new[]
+                    { "lyj_color_blue", "lyj_color_green", "lyj_color_gray",
+                      "lyj_color_white", "lyj_color_black" })
+                {
+                    string p = Path.Combine(CamAppDir, stale + ".bmp");
+                    if (File.Exists(p)) File.Delete(p);
+                }
             }
             catch { }
         }
@@ -1861,14 +2481,13 @@ namespace LYJ
             catch { }
         }
 
-        /// <summary>功能区固定按钮的图标定义（第一项为文件名，其后为图标的 1~2 行文字）。</summary>
+        /// <summary>功能区固定按钮的图标定义（第一项为文件名，其后为图标的 1~2 行文字）。
+        /// 「显示」组（透明化 / 颜色块 / 配置）不走这里 —— 它们由 ColorSlots.WriteAllIcons 画成 48×48 色块。</summary>
         private static readonly string[][] ToolIconDefs =
         {
             new[] { "lyj_cam_assistant", "加工", "助手" },
-            new[] { "lyj_import_stl",  "导入", "STL" },
-            new[] { "lyj_import_stp",  "导入", "STP" },
-            new[] { "lyj_import_igs",  "导入", "IGS" },
-            new[] { "lyj_import_xt",   "导入", "X_T" },
+            new[] { "lyj_import_auto",  "导入", "图档" },
+            new[] { "lyj_export_auto",  "导出", "图档" },
             new[] { "lyj_export_stl",  "导出", "STL" },
             new[] { "lyj_export_stp",  "导出", "STP" },
             new[] { "lyj_export_igs",  "导出", "IGS" },
@@ -1922,7 +2541,7 @@ namespace LYJ
         /// <summary>
         /// 图标按需生成（内置生成器）：文件不存在、或记录的内容标记与本次不一致时才画。
         /// 已有且内容一致 → 原样保留（刷新不会把颜色换掉）。
-        /// 首次升级（还没有记录文件）时，若已有 60x60 方图则直接采纳，不重画。
+        /// 首次升级（还没有记录文件）时，若已有 60x60 大图、48x48 中号色块或 24x24 小色块则直接采纳，不重画。
         /// </summary>
         private static bool EnsureIcon(string fileName, string mark, string[] lines,
             Dictionary<string, string> iconMap)
@@ -1936,9 +2555,9 @@ namespace LYJ
                 {
                     if (hasRecord && old == mark)
                         return false;                       // 内容未变 → 保留
-                    if (!hasRecord && IsIconSquare(dest, 60))
+                    if (!hasRecord && (IsIconSquare(dest, 60) || IsIconSquare(dest, 48) || IsIconSquare(dest, 24)))
                     {
-                        iconMap[fileName] = mark;           // 旧版/手工图 → 采纳
+                        iconMap[fileName] = mark;           // 旧版/手工图（60 大图或 24 小色块）→ 采纳
                         return false;
                     }
                 }
