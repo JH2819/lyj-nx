@@ -115,8 +115,11 @@ Write-Host ("   payload.zip = {0:N0} KB" -f ((Get-Item $zipPath).Length / 1KB))
 
 Write-Host "== 4/5 编译安装程序 ==" -ForegroundColor Cyan
 # 把本次版本号注入安装程序：窗口标题与卸载信息里显示 V1.1.261113-2140
+# 必须关掉 IncludeSourceRevisionInInformationalVersion —— 仓库有 .git 时 SDK 会往
+# InformationalVersion 尾巴拼 "+<提交哈希>"，窗口标题和卸载项里就会多出一串 hash。
 & dotnet build (Join-Path $root "源码\安装器\LYJSetup.csproj") -c Release -v q `
     "/p:Version=$version" "/p:FileVersion=$fileVersion" "/p:AssemblyVersion=$fileVersion" `
+    "/p:IncludeSourceRevisionInInformationalVersion=false" `
     | Select-String -Pattern "error|已成功生成|个错误" | ForEach-Object { $_.Line }
 if ($LASTEXITCODE -ne 0) { throw "安装程序编译失败（退出码 $LASTEXITCODE）" }
 $setup = Join-Path $root "源码\安装器\bin\LYJ安装程序.exe"
