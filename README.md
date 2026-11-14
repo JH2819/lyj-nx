@@ -127,10 +127,7 @@
 - 进对话框时会把图形区里**已经选中**的对象带进选择框，不用重选
 - 拖滑条 / 增删部件都会**即时**改写显示效果（不按确定也能看到结果）
 - 确定保留效果，取消回滚到打开对话框前的状态
-- 原理是 `DisplayModification.NewTranslucency`，只改显示属性，不动几何
-
-> 对话框定义文件是 `application\LYJ_Transparency.dlx`，由 `工具脚本\gen_transparency_dialog.py`
-> 从 NX 自带的分块模板拼装生成；改界面就改那个脚本，别手改 XML。
+- 只改显示属性（相当于 NX 的「编辑对象显示」），不动几何
 
 ### 3.3 一键改颜色 + 自定义颜色按钮
 
@@ -147,48 +144,20 @@
 | 白色 | `White` | 255, 255, 255 |
 | 黑色 | `Black` | 0, 0, 0 |
 
-点颜色按钮先确定**要改哪些对象**：图形区已经选好的直接用；没选就弹出 NX **原生类选择对话框**
-（`NXOpen.Selection.SelectTaggedObjectsWithFullFiltering`）。类型清单里是 实体 / 片体 / 面 / 基准平面 /
-坐标系 / 点，默认只勾 **实体 + 片体**（点模型任意一处都是整个体改色）；想只改一个面就只勾「面」。
+点颜色按钮先确定**要改哪些对象**：图形区已经选好的直接用；没选就弹出 NX **原生类选择对话框**，
+类型清单里是 实体 / 片体 / 面 / 基准平面 / 坐标系 / 点，默认只勾 **实体 + 片体**
+（点模型任意一处都是整个体改色）；想只改一个面，就只勾「面」再点那个面。
+
 按「确定」后颜色**立刻预览**，再弹一个只有「确定 / 取消」的小确认面板：
-确定 → 落成一次可撤销的显示修改（撤销列表里一步「LYJ 改颜色 xxx」，Ctrl+Z 回原色）；
+确定 → 保留这次改色，撤销列表里多一步「LYJ 改颜色 xxx」，Ctrl+Z 一步回原色；
 取消 → 预览过的对象全部还原原色。
 
-为什么改用类选择对话框：自己画的 Block Styler 选择块，过滤器那一行反复出问题 ——
-`AddFilterMembers` 少一步整行不显示、`ClearFilter` 一调整行消失、NX 还会按对话框文件名记住上次选的项，
-而 `GetStrings` 在 2606 上根本读不出 `DetailedFilter`。类选择对话框由 NX 自己维护，类型过滤天然正确、
-没有"对话框记忆"要绕，打开也更快。
-
-> 调用 `SelectTaggedObjectsWithFullFiltering` 时**第 7 个参数（过滤回调）不能传 null**：
-> NX 对每个候选对象都会回调它，传 null 就是每点一次抛一个 `NullReferenceException`，
-> 表现为"怎么点都选不中"，退出对话框时再抛「回调自动化代码时遇到未处理的异常」。
-> 本仓库统一传一个返回 1（放行）的回调。
-
-**改色逻辑照录制的「编辑对象显示」日记账走**（`脚本文件\更改对象显示脚本示例.cs`）：
-`DisplayManager.NewDisplayModification()` → `ApplyToAllFaces = true`、`ApplyToOwningParts = false`、
-`EndPointDisplayState = false`、`NewColor = 色号` → `Apply(对象)`。
-- 选中**实体 / 片体** → 整个体连同它的所有面一起变色。`ApplyToAllFaces` 就是原生命令那个"应用到所有面"，
-  NX 里面对单独设过的颜色不会跟随体色，不开这个开关就会出现「整个模型改了色，那个面还是旧颜色」。
-- 选中**面** → 只改那一个面（日记账第二段就是只改 `FACE 6`）。
-- 选中**特征**（部件导航器里的 `块(1)` 这种）→ 换算成它生成的体：特征不是可显式对象，
-  直接丢给 `DisplayModification` 会失败。
-- 「确定」时先把预览退掉，再在**可见撤销标记**里重新刷一遍并 `UpdateManager.DoUpdate`，
-  撤销列表里只留一步「LYJ 改颜色 xxx」，Ctrl+Z 直接回原色（预览阶段不进撤销记录）。
-
-颜色按 **编号 → 调色板名 → 色值（容差 2%）** 三级找，三级都对不上会提示去配置里换一个颜色，
-不会瞎套一个错颜色（取色在弹窗之前完成，颜色不对当场报错，不会让用户白选一通）。
-
-透明化那个对话框仍是 Block Styler 自绘（选择块 + 滑条），仍按**一次性文件名**（`LYJ_Transparency_<随机8位>.dlx`）
-绕开 NX 的对话框记忆，关闭后临时文件即删。
-
-预览时**不会**出现橙色选中高亮：对话框打开期间把 NX 的「选择色」临时指向目标色（选中对象被选择色
-整片覆盖，颜色一致就等于没有高亮），关掉对话框自动还原成原来的选择色，不会改掉你的显示设置。
+- 选中**实体 / 片体** → 整个体连同它的所有面一起变色（单独设过颜色的面也会跟上）
+- 选中**面** → 只改那一个面
+- 选中**特征**（部件导航器里的 `块(1)` 这种）→ 按它生成的体改
+- 预览时看到的就是实际颜色，不会被橙黄色的选中高亮盖住
 
 功能区里**固定 12 个按钮**：透明化 + 颜色 1~10 + 配置。没配置的槽画成「＋」空位（点它直接开配置窗口）。
-
-> 确认面板的定义文件是 `application\LYJ_ColorConfirm.dlx`，由 `工具脚本\gen_color_confirm_dialog.py`
-> 用同一套分块模板拼装；改界面就改脚本，别手改 XML。选对象那一步走 NX 原生类选择对话框，
-> 没有自定义 dlx。
 
 **配置（组尾那颗九宫格按钮）** — 点开是 NX 原生对话框，10 个颜色槽：
 
@@ -206,16 +175,9 @@
 
 > **改颜色不需要重启 NX**：颜色值是点按钮时现场读配置的，保存后回到图形区直接点就是新颜色。
 > 只有按钮上那颗**小色块的图示**是 NX 启动时加载的图，颜色要到下次启动 NX 才刷新（对话框里也会提示）。
-> 图标文件名带**配置指纹**（`lyj_color_01_<8位> .bmp`），配置一变就是一组新文件名 ——
-> NX 按名字缓存位图，名字不变时会一直复用旧图，这正是以前"配置页和按钮色块对不上、重启也不一定好"的原因。
->
-> 之所以能免重启：按钮结构是固定的（12 个），配置只改颜色值。这也意味着**别再往功能区动态增删按钮** ——
-> 那类改动 NX 一定要求重启。
 >
 > 配置文件是纯文本，喜欢敲字也可以直接改它：
 > `序号 <TAB> 启用 <TAB> 色号 <TAB> R <TAB> G <TAB> B <TAB> 中文备注 <TAB> 调色板英文名`。
-
-> 「显示」组沿用的还是 `rbn_lyj_color.grb` 这个文件名（组名改了、文件名没改，省得动打包与兜底两处列表）。
 
 ### 3.4 加工助手
 
@@ -234,14 +196,11 @@
 | 进给 | — | 转速、进给、刀尖深度、刀尖步距 |
 
 **改法**：单击数值直接改，回车生效，Esc 取消。下拉项（刀具、程序组、MCS、切削模式等）单击弹出候选列表。
-
-**写回方式**：`SetUndoMark` + `CreateFeedsBuilder`（转速 / 进给）+ `MoveObjects(View.MachineTool, …)`（换刀），
-写之前会建撤销标记，改坏了直接 Ctrl+Z 回退。
+改之前会建撤销标记，改坏了直接 Ctrl+Z 回退。
 
 **两个页签** — 「参数」页是上面那张表；「模板」页是树形列出的模板工序，**双击即插入**当前程序组。
-「模板」页背景是**浅灰半透明**（约 55%）：色键窗口做不出半透明，所以另开一个 `Opacity` 衬底窗口
-垫在悬浮窗下面、NX 上面一层，模板页的色键区域就透出这层浅灰（`TplBackColor` / `TplBackOpacity` 两个常量可调）。
-「加工参数」页仍是**全透明**（色键抠除），只留文字。
+「模板」页背景是**浅灰半透明**（约 55%），文字和树线压在上面，既看得清策略又能透出背后的模型；
+「加工参数」页是**全透明**，只留文字。
 
 <table align="center">
   <tr>
@@ -404,30 +363,7 @@ dotnet build 源码\安装器\自测\SetupTest.csproj -c Release
 .\源码\安装器\自测\bin\Release\SetupTest.exe
 ```
 
-## 十、开发者笔记：NX Open 实测差异
-
-NX Open 的部分成员与官方文档描述不一致，以下是本机在 **2606** 上实测踩过的：
-
-- `Selection` 没有 `GetSelectedObjects()`，只有 `GetNumSelectedObjects()` + `GetSelectedObject(i)`
-- `Session.MarkId` 类型不存在，用 `var mark = session.SetUndoMark(...)`
-- `NXMessageBox` 没有 `DialogResponse` 子类型，需要 Yes/No 时改用 WinForms `MessageBox`
-- `NXOpen.CAM.Tool`（文档标 NX2306+）、`CAMObject.GetNameOfType`（标 NX1899+）在 2606 上均不可用
-- 判定程序组要用 `CAMSetup.GetRoot(View.X)` 比对父链 Tag，**不能靠组名**
-- `Operation.GetToolpathTime()` 按刀轨实时计算，很慢 → 用 `BeginInvoke` 延后 + 按 Tag 缓存
-- WinForms 控件取屏幕坐标必须 `ctl.PointToScreen(Point.Empty)`，传 `(ctl.Left, ctl.Bottom)` 会把手里的父容器偏移重复加一遍
-- 悬浮窗里做下拉框要用**独立无边框窗体** + `ShowWithoutActivation` + `WS_EX_NOACTIVATE`，
-  子控件会被悬浮窗客户区裁掉
-- **Block Styler 的托管类型在 `NXOpenUI.dll`，不在 `NXOpen.dll`**（后者只有 `BlockStyler.NamespaceDoc`）；
-  `UI.CreateDialog` 同样定义在 `NXOpenUI.dll`
-- `.dlx` 没有公开的最小可写格式，最稳的做法是拿 NX 自带的分块模板拼装
-  （`NXCAE_EXTRAS\nxrsimc_wntx64\x_plugin\snapy\nx\gui\templates\` 下的 `dialog/group/select_object/double.dlx`）
-- `.dlx` 里属性 `id` 与 `sname` 常不同名（`id="LimitsVisibility" sname="ScaleLimits"`），按 `id` 改；
-  且 `Title` 属性多次出现，必须在插入子块**之前**改，否则会命中子块的同名属性
-- `DisplayModification` 没有公共构造函数，只能 `Session.DisplayManager.NewDisplayModification()`，用完 `Dispose()`
-
-欢迎 PR 补充。
-
-## 十一、贡献
+## 十、贡献
 
 Issue 与 PR 都欢迎。提交前请确保：
 
@@ -435,11 +371,11 @@ Issue 与 PR 都欢迎。提交前请确保：
 2. 不带 NX 的 DLL、官方 `.dat` 数据、个人加工模板、机器绝对路径
 3. `.men` / `.rtb` / `.grb` 保持 GBK 无 BOM
 
-## 十二、来源说明
+## 十一、来源说明
 
 本项目部分代码由 AI 辅助生成，全部经人工在 NX 2606 上实机验证。API 用法以实测为准，不以文档描述为准。
 
-## 十三、许可证
+## 十二、许可证
 
 **Apache License 2.0** — 全文见 [LICENSE](LICENSE)，归属声明见 [NOTICE](NOTICE)。
 
@@ -466,7 +402,7 @@ Issue 与 PR 都欢迎。提交前请确保：
 | `资源\按钮图标\` | 功能区 19 张 BMP（导入 / 导出各合并为一张 60×60 auto 图标；显示组的透明化 / 颜色 1~10 / 配置是 48×48 中号纯色块，程序启动时会按配置重画） |
 | `资源\对话框\` | Block Styler 对话框定义：`LYJ_Transparency.dlx`（透明化）、`LYJ_ColorConfirm.dlx`（改颜色确认，选对象走 NX 类选择）、`LYJ_ColorConfig.dlx`（颜色槽配置），均 UTF-8 |
 | `资源\加工模板\` | 加工模板 prt（使用者自备，不入库） |
-| `工具脚本\` | `gen_icon.py` 生成安装包图标、`gen_ribbon_icon.py` 生成功能区位图、`gen_transparency_dialog.py` / `gen_color_confirm_dialog.py` / `gen_color_config_dialog.py`（另有已停用的 `gen_color_pick_dialog.py`） 生成对话框（共用 `dlx_common.py`）、`gen_block_templates.py` 从 NX 官方 .dlx 抽块模板、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`rebuild_payload.py` 重建安装包载荷、`图标清单.txt` |
-| `文档\` | 安装包依带的 `使用说明.txt` |
+| `工具脚本\` | `gen_icon.py` 生成安装包图标、`gen_ribbon_icon.py` 生成功能区位图、`gen_transparency_dialog.py` / `gen_color_confirm_dialog.py` / `gen_color_config_dialog.py` 生成对话框（共用 `dlx_common.py`）、`gen_block_templates.py` 从 NX 官方 .dlx 抽块模板、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`rebuild_payload.py` 重建安装包载荷、`图标清单.txt` |
+| `文档\` | `使用说明.txt`（随安装包一起放到安装目录）；`截图\` 是 README 配图 |
 | `打包输出\` | `build_release.ps1`；运行时生成 `build\`（中间件）与 `dist\`（安装包） |
-| `内部归档\` | **不入库**：工序参数数据表、参数分析脚本、第三方图标生成小工具 |
+| `内部归档\` | **不入库**：工序参数数据表、参数分析脚本、第三方图标生成小工具、技术笔记 |
