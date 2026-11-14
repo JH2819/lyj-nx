@@ -343,7 +343,7 @@ dotnet build 源码\LYJ\LYJ.csproj -c Release
 .\打包输出\build_release.ps1 -Major 1 -Minor 1    # 自定义版本号前缀（默认就是 1.1）
 ```
 
-打包素材全部来自仓库内，和本机部署状态无关：
+打包素材（加工模板除外）全部来自仓库内，和本机部署状态无关：
 
 | 素材 | 位置 |
 | --- | --- |
@@ -401,8 +401,6 @@ Issue 与 PR 都欢迎。提交前请确保：
 | `资源\菜单功能区\` | `lyj.men`、`rbn_lyj.rtb` 与四个 `.grb` 组文件（GBK 无 BOM） |
 | `资源\按钮图标\` | 功能区 19 张 BMP（导入 / 导出各合并为一张 60×60 auto 图标；显示组的透明化 / 颜色 1~10 / 配置是 48×48 中号纯色块，程序启动时会按配置重画） |
 | `资源\对话框\` | Block Styler 对话框定义：`LYJ_Transparency.dlx`（透明化）、`LYJ_ColorConfirm.dlx`（改颜色确认，选对象走 NX 类选择）、`LYJ_ColorConfig.dlx`（颜色槽配置），均 UTF-8 |
-| `资源\加工模板\` | 加工模板 prt（使用者自备，不入库） |
 | `工具脚本\` | `gen_icon.py` 生成安装包图标、`gen_ribbon_icon.py` 生成功能区位图、`gen_transparency_dialog.py` / `gen_color_confirm_dialog.py` / `gen_color_config_dialog.py` 生成对话框（共用 `dlx_common.py`）、`gen_block_templates.py` 从 NX 官方 .dlx 抽块模板、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`rebuild_payload.py` 重建安装包载荷、`图标清单.txt` |
 | `文档\` | `使用说明.txt`（随安装包一起放到安装目录）；`截图\` 是 README 配图 |
-| `打包输出\` | `build_release.ps1`；运行时生成 `build\`（中间件）与 `dist\`（安装包） |
-| `内部归档\` | **不入库**：工序参数数据表、参数分析脚本、第三方图标生成小工具、技术笔记 |
+| `打包输出\` | `build_release.ps1` 打包脚本 |
