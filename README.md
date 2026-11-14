@@ -18,11 +18,11 @@
 | **加工模板同步** | 扫描模板 prt 生成工序清单与按钮图标，模板一改自动重建 |
 
 <p align="center">
-  <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/01-overview.png">
-    <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/01-overview.png" width="840" alt="LYJ 功能区与加工助手悬浮窗">
+  <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/01-ribbon.png">
+    <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/01-ribbon.png" width="780" alt="LYJ 功能区选项卡">
   </a>
   <br>
-  <sub>功能区「LYJ」选项卡 · 加工助手悬浮窗（参数页，35 项实时回读）</sub>
+  <sub>功能区「LYJ」选项卡：图档导入 / 导出图档（下拉）/ 显示（透明化 + 颜色块 + 配置）/ 加工</sub>
   <br>
   <sub><i>图片走 jsDelivr CDN 显示；若仍加载不出，点图片可打开仓库中的原图。</i></sub>
 </p>
@@ -147,32 +147,62 @@
 | 白色 | `White` | 255, 255, 255 |
 | 黑色 | `Black` | 0, 0, 0 |
 
-点颜色按钮会先弹出 NX 原生**选择对话框**（和透明化同一个套路）：打开时自动带入图形区已选对象，
-在图形区点实体 / 片体 / 面或特征就**立即预览改色**，点「确定」保留、点「取消」恢复原色。
-选**实体**时会把它**所有面**一起刷 —— NX 里面对单独设过的颜色不会跟随体色，不这么做会出现
-「整个模型改了色，之前单独改过色的那个面还是旧颜色」。
+点颜色按钮先确定**要改哪些对象**：图形区已经选好的直接用；没选就弹出 NX **原生类选择对话框**
+（`NXOpen.Selection.SelectTaggedObjectsWithFullFiltering`）。类型清单里是 实体 / 片体 / 面 / 基准平面 /
+坐标系 / 点，默认只勾 **实体 + 片体**（点模型任意一处都是整个体改色）；想只改一个面就只勾「面」。
+按「确定」后颜色**立刻预览**，再弹一个只有「确定 / 取消」的小确认面板：
+确定 → 落成一次可撤销的显示修改（撤销列表里一步「LYJ 改颜色 xxx」，Ctrl+Z 回原色）；
+取消 → 预览过的对象全部还原原色。
+
+为什么改用类选择对话框：自己画的 Block Styler 选择块，过滤器那一行反复出问题 ——
+`AddFilterMembers` 少一步整行不显示、`ClearFilter` 一调整行消失、NX 还会按对话框文件名记住上次选的项，
+而 `GetStrings` 在 2606 上根本读不出 `DetailedFilter`。类选择对话框由 NX 自己维护，类型过滤天然正确、
+没有"对话框记忆"要绕，打开也更快。
+
+> 调用 `SelectTaggedObjectsWithFullFiltering` 时**第 7 个参数（过滤回调）不能传 null**：
+> NX 对每个候选对象都会回调它，传 null 就是每点一次抛一个 `NullReferenceException`，
+> 表现为"怎么点都选不中"，退出对话框时再抛「回调自动化代码时遇到未处理的异常」。
+> 本仓库统一传一个返回 1（放行）的回调。
+
+**改色逻辑照录制的「编辑对象显示」日记账走**（`脚本文件\更改对象显示脚本示例.cs`）：
+`DisplayManager.NewDisplayModification()` → `ApplyToAllFaces = true`、`ApplyToOwningParts = false`、
+`EndPointDisplayState = false`、`NewColor = 色号` → `Apply(对象)`。
+- 选中**实体 / 片体** → 整个体连同它的所有面一起变色。`ApplyToAllFaces` 就是原生命令那个"应用到所有面"，
+  NX 里面对单独设过的颜色不会跟随体色，不开这个开关就会出现「整个模型改了色，那个面还是旧颜色」。
+- 选中**面** → 只改那一个面（日记账第二段就是只改 `FACE 6`）。
+- 选中**特征**（部件导航器里的 `块(1)` 这种）→ 换算成它生成的体：特征不是可显式对象，
+  直接丢给 `DisplayModification` 会失败。
+- 「确定」时先把预览退掉，再在**可见撤销标记**里重新刷一遍并 `UpdateManager.DoUpdate`，
+  撤销列表里只留一步「LYJ 改颜色 xxx」，Ctrl+Z 直接回原色（预览阶段不进撤销记录）。
+
 颜色按 **编号 → 调色板名 → 色值（容差 2%）** 三级找，三级都对不上会提示去配置里换一个颜色，
 不会瞎套一个错颜色（取色在弹窗之前完成，颜色不对当场报错，不会让用户白选一通）。
-选择块的过滤分三步设：`ClearFilter` 清空 → 按 实体 / 片体 / 面 / 边 重建（枚举 + 原生掩码）→
-逐个 `RemoveFilterMember` 摘掉用不上的下拉项。顶部「选择过滤器」下拉的清单**跟 NX 原生
-「编辑对象显示」完全一致**，只有「无选择过滤器 / 实体 / 片体」三项 —— NX 自带的基准、曲线特征、
-模具基准、测量对象、焊接对象、草图都不会出现（它们是被「允许选特征」带出来的：放开 `Features` 类型，
-NX 就会把整套特征类过滤项挂进下拉）。面 / 边不单独列进下拉，但在「无选择过滤器」下照样点得中
-（能不能选由允许类型决定，下拉只是 UI 清单）。正常用不着切，直接点图形区就行。
+
+透明化那个对话框仍是 Block Styler 自绘（选择块 + 滑条），仍按**一次性文件名**（`LYJ_Transparency_<随机8位>.dlx`）
+绕开 NX 的对话框记忆，关闭后临时文件即删。
 
 预览时**不会**出现橙色选中高亮：对话框打开期间把 NX 的「选择色」临时指向目标色（选中对象被选择色
 整片覆盖，颜色一致就等于没有高亮），关掉对话框自动还原成原来的选择色，不会改掉你的显示设置。
 
 功能区里**固定 12 个按钮**：透明化 + 颜色 1~10 + 配置。没配置的槽画成「＋」空位（点它直接开配置窗口）。
 
-> 对话框定义文件是 `application\LYJ_ColorPick.dlx`，由 `工具脚本\gen_color_pick_dialog.py`
-> 用同一套分块模板拼装；改界面就改脚本，别手改 XML。
+> 确认面板的定义文件是 `application\LYJ_ColorConfirm.dlx`，由 `工具脚本\gen_color_confirm_dialog.py`
+> 用同一套分块模板拼装；改界面就改脚本，别手改 XML。选对象那一步走 NX 原生类选择对话框，
+> 没有自定义 dlx。
 
 **配置（组尾那颗九宫格按钮）** — 点开是 NX 原生对话框，10 个颜色槽：
 
 - 每个槽 = 一个启用勾选 + 一个颜色块；点颜色块弹出的是 **NX 内置调色板**，选哪个就是哪个色号
 - 前 5 个槽默认是上面那五个颜色，6~10 号默认空着，勾上并选色即可用
 - 点确定后写 `config\color_slots.txt`、重画 48×48 图标
+
+<p align="center">
+  <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/02-display-config.png">
+    <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/02-display-config.png" width="330" alt="显示组配置：10 个颜色按钮">
+  </a>
+  <br>
+  <sub>「显示组配置」：勾选 = 这个按钮可用，点右侧色块换成任意调色板颜色</sub>
+</p>
 
 > **改颜色不需要重启 NX**：颜色值是点按钮时现场读配置的，保存后回到图形区直接点就是新颜色。
 > 只有按钮上那颗**小色块的图示**是 NX 启动时加载的图，颜色要到下次启动 NX 才刷新（对话框里也会提示）。
@@ -213,19 +243,28 @@ NX 就会把整套特征类过滤项挂进下拉）。面 / 边不单独列进�
 垫在悬浮窗下面、NX 上面一层，模板页的色键区域就透出这层浅灰（`TplBackColor` / `TplBackOpacity` 两个常量可调）。
 「加工参数」页仍是**全透明**（色键抠除），只留文字。
 
-<p align="center">
-  <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/02-template-tree.png">
-    <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/02-template-tree.png" width="340" alt="加工助手 - 模板页">
-  </a>
-  <br>
-  <sub>「模板」页：按模板的程序树列出工序，双击插入</sub>
-</p>
+<table align="center">
+  <tr>
+    <td align="center">
+      <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/03-assistant-param.png">
+        <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/03-assistant-param.png" width="320" alt="加工助手 - 加工参数页">
+      </a>
+      <br><sub>「加工参数」页：全透明，35 项实时回读</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/04-template-tree.png">
+        <img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/04-template-tree.png" width="300" alt="加工助手 - 模板页">
+      </a>
+      <br><sub>「模板」页：按模板的程序树列出工序，双击插入</sub>
+    </td>
+  </tr>
+</table>
 
 **齿轮配置** — 字体、字号、加粗、行的显示 / 隐藏、行的上下排序，都在这颗齿轮里，配置存本地。
 
 | 模板页配置 | 参数页配置 |
 | :---: | :---: |
-| <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/03-assistant-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/03-assistant-config.png" width="430" alt="模板配置"></a> | <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/04-param-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/04-param-config.png" width="430" alt="参数配置"></a> |
+| <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/06-template-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/06-template-config.png" width="400" alt="模板配置"></a> | <a href="https://github.com/JH2819/lyj-nx/blob/main/文档/截图/05-param-config.png"><img src="https://cdn.jsdelivr.net/gh/JH2819/lyj-nx@main/%E6%96%87%E6%A1%A3/%E6%88%AA%E5%9B%BE/05-param-config.png" width="400" alt="参数配置"></a> |
 | 多模板路径管理（`cam_template.txt` 的可视化编辑） | 字体 / 字号 / 加粗 / 显示哪些行 / 行顺序 / 颜色 |
 
 ### 3.5 加工模板同步
@@ -425,9 +464,9 @@ Issue 与 PR 都欢迎。提交前请确保：
 | `源码\安装器\` | 安装程序工程；`自测\` 是纯逻辑测试（不依赖 NX） |
 | `资源\菜单功能区\` | `lyj.men`、`rbn_lyj.rtb` 与四个 `.grb` 组文件（GBK 无 BOM） |
 | `资源\按钮图标\` | 功能区 19 张 BMP（导入 / 导出各合并为一张 60×60 auto 图标；显示组的透明化 / 颜色 1~10 / 配置是 48×48 中号纯色块，程序启动时会按配置重画） |
-| `资源\对话框\` | Block Styler 对话框定义：`LYJ_Transparency.dlx`（透明化）、`LYJ_ColorPick.dlx`（改颜色选择）、`LYJ_ColorConfig.dlx`（颜色槽配置），均 UTF-8 |
+| `资源\对话框\` | Block Styler 对话框定义：`LYJ_Transparency.dlx`（透明化）、`LYJ_ColorConfirm.dlx`（改颜色确认，选对象走 NX 类选择）、`LYJ_ColorConfig.dlx`（颜色槽配置），均 UTF-8 |
 | `资源\加工模板\` | 加工模板 prt（使用者自备，不入库） |
-| `工具脚本\` | `gen_icon.py` 生成安装包图标、`gen_ribbon_icon.py` 生成功能区位图、`gen_transparency_dialog.py` / `gen_color_pick_dialog.py` / `gen_color_config_dialog.py` 生成对话框（共用 `dlx_common.py`）、`gen_block_templates.py` 从 NX 官方 .dlx 抽块模板、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`rebuild_payload.py` 重建安装包载荷、`图标清单.txt` |
+| `工具脚本\` | `gen_icon.py` 生成安装包图标、`gen_ribbon_icon.py` 生成功能区位图、`gen_transparency_dialog.py` / `gen_color_confirm_dialog.py` / `gen_color_config_dialog.py`（另有已停用的 `gen_color_pick_dialog.py`） 生成对话框（共用 `dlx_common.py`）、`gen_block_templates.py` 从 NX 官方 .dlx 抽块模板、`deploy_ribbon.py` 重排功能区并覆盖 DLL、`rebuild_payload.py` 重建安装包载荷、`图标清单.txt` |
 | `文档\` | 安装包依带的 `使用说明.txt` |
 | `打包输出\` | `build_release.ps1`；运行时生成 `build\`（中间件）与 `dist\`（安装包） |
 | `内部归档\` | **不入库**：工序参数数据表、参数分析脚本、第三方图标生成小工具 |

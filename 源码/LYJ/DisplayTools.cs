@@ -1,4 +1,4 @@
-// Copyright 2026 The LYJ Authors
+﻿// Copyright 2026 The LYJ Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,9 +28,10 @@ namespace LYJ
     ///    上面选部件，下面是透明度滑条，拖动即时预览。
     ///    对话框定义在 application\LYJ_Transparency.dlx（由 工具脚本\gen_transparency_dialog.py 生成）。
     ///
-    /// 2) 「部件颜色」—— 点颜色按钮同样先弹 NX 原生对话框：选对象 → 选中即预览改色
-    ///    → 确定保留 / 取消恢复原色。对话框定义在 application\LYJ_ColorPick.dlx
-    ///    （由 工具脚本\gen_color_pick_dialog.py 生成）。
+    /// 2) 「部件颜色」—— 点颜色按钮先用 **NX 原生类选择对话框**选对象（图形区已选就直接用），
+    ///    立刻预览改色，再弹一个只有「确定 / 取消」的确认面板：确定落成一次可撤销的显示修改，
+    ///    取消恢复原色。确认面板定义在 application\LYJ_ColorConfirm.dlx
+    ///    （由 工具脚本\gen_color_confirm_dialog.py 生成）。
     ///
     /// 两个功能都通过 DisplayModification 生效，与 NX 自带"编辑对象显示"走同一套显示机制，
     /// 不写部件数据、不进撤销列表以外的地方。
@@ -38,7 +39,6 @@ namespace LYJ
     internal static class DisplayTools
     {
         private const string DlgFileName = "LYJ_Transparency.dlx";
-        private const string ColorDlgFileName = "LYJ_ColorPick.dlx";
 
         // 对话框存活期间的块引用（回调里用）
         private static BlockDialog _dialog;
@@ -70,9 +70,14 @@ namespace LYJ
                 return;
             }
 
+            // 用一次性文件名，绕开 NX 的对话框记忆（它会把上次的选择过滤器恢复回来）
+            string tempDlx = CloneDlgWithUniqueName(dlx);
+            string dlgArg = tempDlx != null ? Path.GetFileName(tempDlx) : DlgFileName;
+            string dlgPath = tempDlx ?? dlx;
+
             try
             {
-                BlockDialog dlg = CreateDialog(ui, DlgFileName, dlx);
+                BlockDialog dlg = CreateDialog(ui, dlgArg, dlgPath);
                 Log("CreateDialog 成功，StartLaunch");
                 dlg.AddInitializeHandler(OnInit);
                 dlg.AddUpdateHandler(OnUpdate);
@@ -97,7 +102,64 @@ namespace LYJ
                 _transBlock = null;
                 _shown = false;
                 _markCreated = false;
+                TryDeleteFile(tempDlx);
             }
+        }
+
+        /// <summary>
+        /// 把 .dlx 复制成"一次性名字"再打开。
+        ///
+        /// NX 的对话框记忆是按 **文件名** 建 key 的（`DialogMemory.dlx` 里那条
+        /// `MORE::UGS::BlockStyler::DialogCreatorLYJ_Transparency` 就是从文件名扩展来的）。
+        /// 名字不变，NX 每次打开都会把上次的 DetailedFilter（也就是顶部的选择过滤器）
+        /// 恢复回来；而块级 API 清不掉它 —— PropertyList 里真实的属性名是 `SelectionFilter`，
+        /// `ClearFilter` 返回成功，UI 上仍是上次那一项（实测 2026-11-14）。
+        /// 换一个没用过的文件名，NX 找不到对应记忆，下拉自然回到默认值。
+        ///
+        /// 现在只剩透明化用得上（改色已改走 NX 原生类选择对话框，没有自绘选择块）。
+        /// 用完即删，只在 %TEMP%\LYJ\dlg 下躺一会儿。
+        /// </summary>
+        internal static string CloneDlgWithUniqueName(string srcPath)
+        {
+            if (string.IsNullOrEmpty(srcPath)) return null;
+
+            string baseName = Path.GetFileNameWithoutExtension(srcPath);
+            string name = baseName + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".dlx";
+
+            // 优先写到安装目录的 application 下 —— NX 的 CreateDialog 按纯文件名只在这个搜索路径里找，
+            // 放这儿成功率高；写不进去（只读安装、权限不足）再退系统临时目录，那里只能走绝对路径。
+            string[] dirs =
+            {
+                Path.Combine(LYJApp.DeployRoot, "application"),
+                Path.Combine(Path.GetTempPath(), "LYJ", "dlg"),
+            };
+
+            foreach (string dir in dirs)
+            {
+                try
+                {
+                    Directory.CreateDirectory(dir);
+                    string dst = Path.Combine(dir, name);
+                    File.Copy(srcPath, dst, true);
+                    Log("  对话框改用一次性名字（绕开记忆）：" + dst);
+                    return dst;
+                }
+                catch (Exception ex)
+                {
+                    Log("  在 " + dir + " 建临时对话框失败（换下一个）: " + ex.GetType().Name + ": " + ex.Message);
+                }
+            }
+
+            Log("  复制对话框失败（回退用原文件）");
+            return null;
+        }
+
+        /// <summary>安静地删一个临时文件，失败只记日志（关对话框后再删，NX 已经不用它了）。</summary>
+        private static void TryDeleteFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            try { if (File.Exists(path)) File.Delete(path); }
+            catch (Exception ex) { Log("  删除临时文件失败（忽略）: " + ex.Message); }
         }
 
         /// <summary>
@@ -107,6 +169,14 @@ namespace LYJ
         /// </summary>
         internal static BlockDialog CreateDialog(UI ui, string fileName, string dlxPath)
         {
+            // 一次性名字的临时 dlx 是绝对路径：直接走路径，省一次注定失败的尝试
+            if (!string.IsNullOrEmpty(fileName) && Path.IsPathRooted(fileName))
+            {
+                BlockDialog d0 = ui.CreateDialog(dlxPath);
+                Log("  按绝对路径创建成功：" + dlxPath);
+                return d0;
+            }
+
             try
             {
                 BlockDialog d = ui.CreateDialog(fileName);
@@ -176,8 +246,14 @@ namespace LYJ
             }
         }
 
-        // 允许选择的类型（NXOpen.BlockStyler.SelectObject.FilterType）：
-        // 实体 / 片体 / 面 / 边。这四类覆盖了"能改色、能改透明度的东西"。
+        // 允许选择的类型（NXOpen.BlockStyler.SelectObject.FilterType），分两套：
+        //
+        //   正常模式（默认）：只放 实体 / 片体，**故意不放 Faces** ——
+        //     NX 的预高亮是"最小实体优先"（面 > 边 > 体），只要面在可选项里，
+        //     鼠标一放到模型上就先把那一个面高亮出来（提示文字「面 / 块(1)」），
+        //     点了才变成体，看着就像实体选不中。把面从可选项里拿掉后，
+        //     NX 预高亮的直接就是整个体，所见即所得。
+        //   面模式：用户在下拉里切到「面」时才放开 Faces，保留单面改色。
         //
         // 这里**故意不含 Features**：一旦放开 Feature 类型，NX 会往下拉里塞一整套
         // 特征类过滤项（基准 / 曲线特征 / 模具基准 / 测量对象 / 焊接对象 / 草图），
@@ -187,8 +263,12 @@ namespace LYJ
         {
             SelectObjectBlock.FilterType.SolidBodies,
             SelectObjectBlock.FilterType.SheetBodies,
+        };
+
+        /// <summary>面模式：下拉切到「面」时用，只让面可选。</summary>
+        private static readonly SelectObjectBlock.FilterType[] FaceFilterTypes =
+        {
             SelectObjectBlock.FilterType.Faces,
-            SelectObjectBlock.FilterType.Edges,
         };
 
         /// <summary>
@@ -200,15 +280,19 @@ namespace LYJ
         /// 只调 AddFilter 时下拉里永远只有 NX 默认那几项（基准/曲线特征/草图…），
         /// 用户会以为选不了实体和片体。
         ///
-        /// 清单与 NX 原生「编辑对象显示」的选择过滤器完全一致，只有三项：
-        /// 无选择过滤器 / 实体 / 片体（2026-11-13 用户按原生界面比对后要求对齐）。
-        /// 面 / 边不单独列进下拉，但在「无选择过滤器」下照样能点中 ——
-        /// 能不能选由上面的 AddFilter / 掩码决定，下拉只是 UI 清单。
+        /// 下拉清单（顺序即显示顺序），照用户 2026-11-14 给的 NX 原生「编辑对象显示」截图：
+        ///   无选择过滤器 / 实体 / 坐标系 / 基准平面 / 点 / 面
+        /// 用户要求「实体排最靠前」，所以实体放在数组第一位，紧跟在「无选择过滤器」下面。
+        /// 片体 / 边不再单独列进下拉（用户明确要求去掉），但允许类型里照样放开 ——
+        /// 「无选择过滤器」下点片体、边都能选中改色。
         /// </summary>
         private static readonly NXOpen.Select.FilterMember[] SelectionFilterMembers =
         {
-            NXOpen.Select.FilterMember.AllSolidBodies,
-            NXOpen.Select.FilterMember.AllSheetBodies,
+            NXOpen.Select.FilterMember.AllSolidBodies,      // 实体：优先级最高，排最前
+            NXOpen.Select.FilterMember.CoordinateSystem,
+            NXOpen.Select.FilterMember.DatumPlane,
+            NXOpen.Select.FilterMember.Point,
+            NXOpen.Select.FilterMember.AllFaces,
         };
 
         /// <summary>
@@ -216,61 +300,85 @@ namespace LYJ
         ///
         /// .dlx 里 DetailedFilter 是空的，NX 会把它当成"一个类型都不允许"，
         /// 结果图形区里点什么都不上选（只有打开对话框前已经选中的对象能带进来）。
-        /// 所以必须在 Initialize 里显式设一遍：实体 / 片体 / 面 / 边。
+        /// 所以必须在 Initialize 里显式设一遍：实体 / 片体。
         ///
         /// 三条路各管一件事，缺一个就有症状：
         ///   ① 枚举 AddFilter(FilterType) —— 块允许选的类型（保证图形区点得中）；
         ///   ② 掩码 AddFilter(type, subtype, solidType) —— 同上，走 UF 掩码；
         ///   ③ AddFilterMember(s) —— **顶部下拉里显示哪些项**，只管 UI 清单。
+        ///
+        /// 「过滤器记着上次」已经由"一次性文件名"（<see cref="CloneDlgWithUniqueName"/>）
+        /// 从根上解决：NX 的对话框记忆按 dlx 文件名建 key，名字每回都不同就没有记忆可恢复。
+        /// 之前那套 ResetFilter + PropertyList.ClearFilter 只剩反作用 —— 实测每次打开白花
+        /// 0.7~1.2 秒（GetPropertyNames 300ms、清不存在的属性名一次 450ms），已整段删掉。
         /// </summary>
         private static void ApplySelectionFilter(SelectObjectBlock block)
         {
-            // ClearFilter / ResetFilter 只清"允许选什么类型"，**不动下拉清单** ——
-            // 实测（NX2606）清完再 AddFilter，下拉里的默认项（基准 / 曲线特征 / 模具基准 /
-            // 测量对象 / 焊接对象 / 草图）又原样回来了。所以要先把默认项逐个删掉，
-            // 再注册自己的下拉项（顺序见下面 ③④，不能反）。
-            try { block.ClearFilter(); }
-            catch (Exception ex)
-            {
-                Log("  ClearFilter 失败，退回 ResetFilter: " + ex.Message);
-                try { block.ResetFilter(); }
-                catch (Exception e2) { Log("  ResetFilter 也失败（忽略）: " + e2.Message); }
-            }
+            ApplyFilterTypes(block, false);
 
+            // 清掉 NX 默认挂上来的杂项（基准 / 曲线特征 / 模具基准 / 测量对象 / 焊接对象 / 草图…）。
+            // **必须排在注册自己下拉项之前**：RemoveFilterMember 是按内部
+            // (type, subtype, solid) 三元组移除的，清理过程中碰到同一三元组的成员时，
+            // 刚加进去的「实体 / 片体」会被一起带走 —— 2026-11-13 实测症状就是下拉只剩「实体 / 面」。
+            int removed = StripExtraFilterMembers(block);
+
+            // 最后注册自己的下拉项（无选择过滤器由 NX 自带，其余见 SelectionFilterMembers）
+            int memberOk = AddOwnFilterMembers(block);
+
+            Log("  选择过滤：清理额外下拉项 " + removed + " 个，注册下拉项 " +
+                memberOk + "/" + SelectionFilterMembers.Length);
+        }
+
+        /// <summary>
+        /// 只重设"允许选什么类型"，**不碰顶部下拉清单**（ClearFilter 不动 FilterMember 列表，
+        /// 所以切模式时下拉里那几项不会被打回默认）。
+        ///
+        /// faceMode = false：实体 / 片体 —— 面不在可选项里，NX 预高亮直接给整个体；
+        /// faceMode = true ：只有面 —— 用户在下拉里切到「面」做单面改色时用。
+        /// clearFirst：先清一遍 DetailedFilter 再写。OnInit 里建完下拉清单后要清（clearFirst=true），
+        /// 由 <see cref="ApplySelectionFilter"/> 的 ③ 步传 false 再补允许类型。
+        ///
+        /// ★ **用户切顶部下拉时绝对不能调**：ClearFilter() 清掉的就是 DetailedFilter，
+        ///   也就是下拉当前选中的那一项 —— 用户刚切到「面」，一反手就被清回空白，
+        ///   模式判定跟着回退，症状正是"选了面，整个体照样变色"（2026-11-14 实测）。
+        /// </summary>
+        private static void ApplyFilterTypes(SelectObjectBlock block, bool faceMode)
+        {
+            try { block.ClearFilter(); }
+            catch (Exception ex) { Log("  ClearFilter 失败（忽略）: " + ex.Message); }
+
+            SelectObjectBlock.FilterType[] types = faceMode ? FaceFilterTypes : SelectionFilterTypes;
             int ok = 0;
-            foreach (SelectObjectBlock.FilterType ft in SelectionFilterTypes)
+            foreach (SelectObjectBlock.FilterType ft in types)
             {
                 try { block.AddFilter(ft); ok++; }
                 catch (Exception ex) { Log("  AddFilter(" + ft + ") 失败（忽略）: " + ex.Message); }
             }
 
-            // 掩码写法：实体 / 片体 用 solid 类型 + 实体/片体子类型，面 / 边 / 特征各一个类型码
+            // 掩码写法：实体 / 片体 用 solid 类型 + 实体/片体子类型，面 / 特征各一个类型码
             // （特征这里只走掩码，不加 FilterType.Features —— 见上面 SelectionFilterTypes 的说明）
+            int[][] maskDefs = faceMode
+                ? new[] { new[] { NXOpen.UF.UFConstants.UF_face_type, 0, 0 } }
+                : new[]
+                {
+                    new[] { NXOpen.UF.UFConstants.UF_solid_type, 0,
+                            NXOpen.UF.UFConstants.UF_UI_SEL_FEATURE_SOLID_BODY },
+                    new[] { NXOpen.UF.UFConstants.UF_solid_type, 0,
+                            NXOpen.UF.UFConstants.UF_UI_SEL_FEATURE_SHEET_BODY },
+                    new[] { NXOpen.UF.UFConstants.UF_feature_type, 0, 0 },
+                };
+
             int maskOk = 0;
-            maskOk += TryAddMaskFilter(block, NXOpen.UF.UFConstants.UF_solid_type, 0,
-                                       NXOpen.UF.UFConstants.UF_UI_SEL_FEATURE_SOLID_BODY);
-            maskOk += TryAddMaskFilter(block, NXOpen.UF.UFConstants.UF_solid_type, 0,
-                                       NXOpen.UF.UFConstants.UF_UI_SEL_FEATURE_SHEET_BODY);
-            maskOk += TryAddMaskFilter(block, NXOpen.UF.UFConstants.UF_face_type, 0, 0);
-            maskOk += TryAddMaskFilter(block, NXOpen.UF.UFConstants.UF_edge_type, 0, 0);
-            maskOk += TryAddMaskFilter(block, NXOpen.UF.UFConstants.UF_feature_type, 0, 0);
+            foreach (int[] m in maskDefs)
+                maskOk += TryAddMaskFilter(block, m[0], m[1], m[2]);
 
-            // ③ 先把 NX 默认挂上来的杂项（基准 / 曲线特征 / 模具基准 / 测量对象 / 焊接对象 / 草图…）
-            //    扫掉。**必须排在注册自己下拉项之前**：RemoveFilterMember 是按内部
-            //    (type, subtype, solid) 三元组移除的，清理过程中碰到同三元组的成员时，
-            //    刚加进去的「片体」会被一起带走 —— 2026-11-13 实测症状就是下拉只剩「实体 / 面」。
-            int removed = StripExtraFilterMembers(block);
-
-            // ④ 最后注册自己的下拉项：无选择过滤器 / 实体 / 片体（对齐 NX 原生「编辑对象显示」）
-            int memberOk = AddOwnFilterMembers(block);
-
-            Log("  选择过滤：" + ok + "/" + SelectionFilterTypes.Length + " 枚举 + " + maskOk +
-                "/5 掩码，清理额外下拉项 " + removed + " 个，注册下拉项 " +
-                memberOk + "/" + SelectionFilterMembers.Length);
+            Log("  允许类型：" + (faceMode ? "面模式" : "体模式") + "，" + ok + "/" + types.Length +
+                " 枚举 + " + maskOk + "/" + maskDefs.Length + " 掩码");
         }
 
         /// <summary>
-        /// 注册顶部的「实体 / 片体」两项。必须在上面的清理之后调用，否则会被清理一起删掉。
+        /// 注册顶部的下拉项（坐标系 / 基准平面 / 实体 / 点 / 面）。必须在上面的清理之后调用，
+        /// 否则会被清理一起删掉。
         /// </summary>
         private static int AddOwnFilterMembers(SelectObjectBlock block)
         {
@@ -294,46 +402,81 @@ namespace LYJ
 
         /// <summary>
         /// 摘掉下拉里多余的过滤项，只保留 <see cref="SelectionFilterMembers"/> 那几项和「无选择过滤器」。
-        ///
-        /// 说明：NX 的 FilterMember 有 600 多个枚举值，这里全量扫一遍逐个 RemoveFilterMember ——
-        /// 没挂上去的值 NX 会直接忽略（个别会抛，包在 catch 里）。一次扫描约几十毫秒，
-        /// 只在打开对话框时做一次，可以接受；反过来按名字猜"基准/草图"对应哪个枚举值太不可靠。
+        /// FilterMember 有 620 多个枚举值，按名字猜"基准/草图"对应哪个值不可靠，只能全量扫一遍批量删。
         /// </summary>
         private static int StripExtraFilterMembers(SelectObjectBlock block)
         {
-            Array all;
-            try { all = Enum.GetValues(typeof(NXOpen.Select.FilterMember)); }
-            catch (Exception ex)
+            NXOpen.Select.FilterMember[] extra = ExtraFilterMembers;
+            if (extra == null)
             {
-                Log("  枚举 FilterMember 失败（忽略）: " + ex.Message);
+                Log("  枚举 FilterMember 失败（忽略）");
                 return 0;
             }
 
-            HashSet<NXOpen.Select.FilterMember> keep =
-                new HashSet<NXOpen.Select.FilterMember>(SelectionFilterMembers);
-
-            int removed = 0, failed = 0;
-            string firstFail = null;
             int t0 = Environment.TickCount;
+            int removed = 0;
 
-            foreach (object o in all)
+            // 先用批量接口（NX1980+）：620 项一次过去
+            try
             {
-                NXOpen.Select.FilterMember fm = (NXOpen.Select.FilterMember)o;
-                if (keep.Contains(fm)) continue;                 // 自己注册的「实体 / 片体」留着
-                if (fm.ToString() == "None") continue;           // 「无选择过滤器」留着
+                block.RemoveFilterMembers(extra);
+                removed = extra.Length;
+            }
+            catch (Exception ex)
+            {
+                Log("  RemoveFilterMembers 批量失败，改为逐个删: " + ex.GetType().Name + ": " + ex.Message);
 
-                try { block.RemoveFilterMember(fm); removed++; }
-                catch (Exception ex)
+                int failed = 0;
+                string firstFail = null;
+                foreach (NXOpen.Select.FilterMember fm in extra)
                 {
-                    failed++;
-                    if (firstFail == null) firstFail = fm + " → " + ex.Message;
+                    try { block.RemoveFilterMember(fm); removed++; }
+                    catch (Exception e2)
+                    {
+                        failed++;
+                        if (firstFail == null) firstFail = fm + " → " + e2.Message;
+                    }
                 }
+                if (firstFail != null) Log("  首个失败 " + firstFail + "（失败 " + failed + " 项）");
             }
 
-            Log("  下拉项清理：尝试移除 " + removed + " 项 / 失败 " + failed +
-                " 项，耗时 " + (Environment.TickCount - t0) + " ms" +
-                (firstFail == null ? "" : "；首个失败 " + firstFail));
+            Log("  下拉项清理：移除 " + removed + " 项，耗时 " + (Environment.TickCount - t0) + " ms");
             return removed;
+        }
+
+        /// <summary>
+        /// 除自己那几项和「无选择过滤器」之外的全部 FilterMember，惰性算一次就缓存 ——
+        /// 枚举值有 620 多个，每次 Enum.GetValues + HashSet 也是白花时间。
+        /// </summary>
+        private static NXOpen.Select.FilterMember[] _extraFilterMembers;
+
+        private static NXOpen.Select.FilterMember[] ExtraFilterMembers
+        {
+            get
+            {
+                if (_extraFilterMembers != null) return _extraFilterMembers;
+                try
+                {
+                    HashSet<NXOpen.Select.FilterMember> keep =
+                        new HashSet<NXOpen.Select.FilterMember>(SelectionFilterMembers);
+
+                    List<NXOpen.Select.FilterMember> list = new List<NXOpen.Select.FilterMember>(640);
+                    foreach (object o in Enum.GetValues(typeof(NXOpen.Select.FilterMember)))
+                    {
+                        NXOpen.Select.FilterMember fm = (NXOpen.Select.FilterMember)o;
+                        if (keep.Contains(fm)) continue;                 // 自己注册的那几项留着
+                        if (fm.ToString() == "None") continue;           // 「无选择过滤器」留着
+                        list.Add(fm);
+                    }
+                    _extraFilterMembers = list.ToArray();
+                }
+                catch (Exception ex)
+                {
+                    Log("  枚举 FilterMember 失败（忽略）: " + ex.Message);
+                    _extraFilterMembers = null;
+                }
+                return _extraFilterMembers;
+            }
         }
 
         private static int TryAddMaskFilter(SelectObjectBlock block, int type, int subtype, int solidType)
@@ -420,7 +563,7 @@ namespace LYJ
                     _markCreated = true;
                 }
 
-                ApplyDisplayModification(objs, -1, value);
+                ApplyDisplayModification(objs, -1, value, false);
             }
             catch (Exception ex)
             {
@@ -436,15 +579,17 @@ namespace LYJ
 
         #region 部件颜色
 
-        // 改色对话框存活期间的块引用与状态
+        /// <summary>改色确认面板：一个说明标签 + 确定/取消（没有选择块，选对象交给 NX 原生类选择）。</summary>
+        private const string ColorConfirmDlgFileName = "LYJ_ColorConfirm.dlx";
+
+        // 改色流程里的状态
         private static BlockDialog _colorDialog;
-        private static SelectObjectBlock _colorSelBlock;
         private static LabelBlock _colorInfoBlock;
-        private static int _colorTargetId = -1;        // 本次要应用的调色板编号
-        private static string _colorTargetName = "";   // 颜色名（写进对话框说明）
-        private static bool _colorShown;               // 对话框已显示（之前的 update 都算初始化）
-        private static bool _colorApplying;            // 防 update 嵌套触发
-        private static int _savedSelColor = -1;        // 预览期间临时改掉的"选择色"，关闭时还原
+        private static int _colorTargetId = -1;          // 本次要应用的调色板编号
+        private static string _colorTargetName = "";     // 颜色名（写进对话框说明）
+        private static TaggedObject[] _colorPicked;      // 类选择 / 图形区拿到的原始对象
+        private static DisplayableObject[] _colorObjs;   // 展开后真正要刷的对象（体 + 它的面）
+        private static int _savedSelColor = -1;          // 预览期间临时改掉的"选择色"，关闭时还原
         private static bool _selColorChanged;
 
         /// <summary>预览前记下的原色，取消时逐个还原（Tag → 对象 + 原色号）。</summary>
@@ -458,14 +603,12 @@ namespace LYJ
             = new Dictionary<Tag, ColorOrigin>();
 
         /// <summary>
-        /// 颜色按钮入口：先弹 NX 原生选择对话框，用户在图形区点对象（选中即预览改色），
-        /// 确定保留 / 取消恢复原色。
+        /// 颜色按钮入口：先定要改哪些对象（图形区已选就用现成的，否则拉起 NX 原生类选择对话框），
+        /// 立刻预览改色，再弹一个只有「确定 / 取消」的小面板：
+        /// 确定 → 落成一次可撤销的显示修改；取消 → 把预览过的对象还原原色。
         ///
-        /// 取色仍是三级（顺序很有讲究，见 ResolveSlotColorId）：
-        ///   ① colorId &gt; 0 且当前部件调色板里确实有这个号 → 直接用
-        ///   ② colorName 非空 → 按名字查（custom 过调色板也能对上）
-        ///   ③ 以上都不行 → 按 RGB 在调色板里找最近色（用缓存，只扫一次）
-        /// 取色在弹窗**之前**做完，颜色不对当场报错，不会让用户白选一通。
+        /// 取色仍是三级（见 ResolveSlotColorId），在弹任何框之前做完 —— 颜色不对当场报错，
+        /// 不会让用户白选一通。
         /// </summary>
         internal static void ApplyColorSlot(int colorId, string colorName, double[] rgb, string displayName)
         {
@@ -474,7 +617,7 @@ namespace LYJ
             try
             {
                 // 模态对话框正常不会并发，这条只是防重入
-                if (_colorDialog != null) { Log("已有改色对话框在显示，忽略本次点击"); return; }
+                if (_colorDialog != null) { Log("已有改色面板在显示，忽略本次点击"); return; }
 
                 Part workPart = Session.GetSession().Parts.Work;
                 if (workPart == null)
@@ -486,32 +629,43 @@ namespace LYJ
                 int id = ResolveSlotColorId(workPart, colorId, colorName, rgb, displayName);
                 if (id < 0) return;      // 报错已在里面弹过
 
-                string dlx = FindDlx(ColorDlgFileName);
-                Log("改色对话框 dlx = " + (dlx ?? "<未找到>"));
-                if (dlx == null)
+                TaggedObject[] picked = PickForColor();
+                if (picked == null || picked.Length == 0) { Log("  没有选中对象，放弃本次改色"); return; }
+
+                DisplayableObject[] objs = ExpandBodiesWithFaces(ResolveForColor(picked));
+                if (objs.Length == 0)
                 {
-                    ui.NXMessageBox.Show("改颜色", NXMessageBox.DialogType.Error,
-                        "找不到对话框定义 " + ColorDlgFileName + "。\r\n\r\n" +
-                        "请重新安装 LYJ —— 该文件应位于安装目录的 application 下。");
+                    ui.NXMessageBox.Show("改颜色", NXMessageBox.DialogType.Warning,
+                        "选中的对象不能改色。\r\n\r\n" +
+                        "选实体 / 片体 / 面，或在部件导航器里选生成了实体的特征（如「块(1)」）。");
                     return;
                 }
 
                 _colorTargetId = id;
                 _colorTargetName = string.IsNullOrEmpty(displayName) ? "选定颜色" : displayName;
+                _colorPicked = picked;
+                _colorObjs = objs;
 
-                // 预览期间把「选择色」临时指到目标色：否则选中对象被橙色高亮整片盖住，
-                // 用户根本看不出改成了什么颜色（关闭对话框时在 finally 里还原）
+                // 预览期间把"选择色"临时指到目标色：否则对象被橙色高亮整片盖住，看不出改成了什么色
                 SetSelectionColorForPreview(workPart, id);
+                ApplyColorPreview();
 
-                BlockDialog dlg = CreateDialog(ui, ColorDlgFileName, dlx);
+                string dlx = FindDlx(ColorConfirmDlgFileName);
+                if (dlx == null)
+                {
+                    // 少了确认面板不该让功能瘫痪：直接提交，用户照样能 Ctrl+Z 撤回
+                    Log("  找不到 " + ColorConfirmDlgFileName + "，直接提交改色");
+                    CommitColor();
+                    return;
+                }
+
+                BlockDialog dlg = CreateDialog(ui, ColorConfirmDlgFileName, dlx);
                 dlg.AddInitializeHandler(OnColorInit);
-                dlg.AddUpdateHandler(OnColorUpdate);
-                dlg.AddDialogShownHandler(OnColorShown);
                 dlg.AddOkHandler(OnColorOk);
                 dlg.AddCancelHandler(OnColorCancel);
                 _colorDialog = dlg;
 
-                dlg.Launch();            // 模态：用户关闭后返回
+                dlg.Launch();            // 模态：用户点确定 / 取消后返回
             }
             catch (Exception ex)
             {
@@ -521,48 +675,141 @@ namespace LYJ
             {
                 RestoreSelectionColor();
                 _colorDialog = null;
-                _colorSelBlock = null;
                 _colorInfoBlock = null;
-                _colorShown = false;
-                _colorApplying = false;
+                _colorPicked = null;
+                _colorObjs = null;
                 _colorOrigin.Clear();
                 _colorTargetId = -1;
                 _colorTargetName = "";
             }
         }
 
+        /// <summary>
+        /// 类选择对话框里可供勾选的类型（supported）——
+        /// 勾「实体 / 片体」→ 点模型任意一处都是整个体改色；只勾「面」→ 单面改色。
+        /// </summary>
+        private static readonly NXOpen.Select.FilterMember[] ColorSelectTypes =
+        {
+            NXOpen.Select.FilterMember.AllSolidBodies,
+            NXOpen.Select.FilterMember.AllSheetBodies,
+            NXOpen.Select.FilterMember.AllFaces,
+            NXOpen.Select.FilterMember.DatumPlane,
+            NXOpen.Select.FilterMember.CoordinateSystem,
+            NXOpen.Select.FilterMember.Point,
+        };
+
+        /// <summary>默认勾上的类型：实体 + 片体 —— 即"点哪都是整个体"，和原生「编辑对象显示」一致。</summary>
+        private static readonly NXOpen.Select.FilterMember[] ColorSelectDefaults =
+        {
+            NXOpen.Select.FilterMember.AllSolidBodies,
+            NXOpen.Select.FilterMember.AllSheetBodies,
+        };
+
+        /// <summary>
+        /// 类选择的对象过滤回调：全放行（NX 约定返回 1 = 允许选中）。
+        /// 第 7 个参数**不能传 null** —— NX 每个候选对象都回调它，传 null 就是每次点选一个
+        /// NullReferenceException（选不中任何对象，关对话框时抛「回调自动化代码时遇到未处理的异常」）。
+        /// </summary>
+        private static int AcceptAnyObject(TaggedObject obj)
+        {
+            try
+            {
+                _filterHits++;
+                return 1;
+            }
+            catch
+            {
+                return 1;      // 回调里抛异常会穿出 NX 的对话框循环，一律吞掉
+            }
+        }
+
+        private static int _filterHits;      // 日志诊断：这次对话框里过滤器被回调了几次
+
+        private static readonly Selection.FilterTaggedObject ColorFilterAcceptAll = AcceptAnyObject;
+
+        /// <summary>
+        /// 挑出要改色的对象：图形区已选就直接用，否则拉 NX 原生类选择对话框（可多选）。
+        /// 用原生的类选择而不是自绘选择块 —— 自绘那套过滤器在 2606 上清单会消失、
+        /// 会记住上次的勾选、也读不出 DetailedFilter；原生对话框由 NX 自己维护。
+        /// </summary>
+        private static TaggedObject[] PickForColor()
+        {
+            TaggedObject[] pre = GetPickedObjects();
+            if (pre.Length > 0)
+            {
+                Log("  图形区已选 " + pre.Length + " 个对象（" + DescribePicked(pre) + "），直接用");
+                return pre;
+            }
+
+            TaggedObject[] picked = null;
+            NXOpen.Selection.Response resp;
+            _filterHits = 0;
+            try
+            {
+                // 选择管理器是实例（UI.SelectionManager），不是静态类
+                Selection sel = UI.GetUI().SelectionManager;
+                resp = sel.SelectTaggedObjectsWithFullFiltering(
+                    "选择要改色的对象（可多选；勾选类型可限定实体 / 面）",
+                    "改颜色 - 选择对象",
+                    NXOpen.Selection.SelectionScope.WorkPart,
+                    NXOpen.Selection.SelectionAction.ClearAndEnableSpecific,
+                    ColorSelectTypes,
+                    ColorSelectDefaults,
+                    ColorFilterAcceptAll,       // 不能传 null，见 AcceptAnyObject 的说明
+                    out picked);
+            }
+            catch (Exception ex)
+            {
+                Log("  类选择对话框失败: " + ex.GetType().Name + ": " + ex.Message);
+                throw;
+            }
+
+            int n = picked == null ? 0 : picked.Length;
+            Log("  类选择返回 " + resp + "，" + n + " 个对象（" + DescribePicked(picked) +
+                "），过滤器回调 " + _filterHits + " 次");
+
+            // 对话框改的是"全局选择过滤器"的成员集合，回图形区前恢复成默认 ——
+            // 否则下一次在图形区点东西，可能还带着"只能选实体"的限制。
+            try { UI.GetUI().SelectionManager.ResetEnabledGlobalFilterMembers(); }
+            catch (Exception ex) { Log("  重置全局过滤器失败（忽略）: " + ex.Message); }
+
+            if (resp != NXOpen.Selection.Response.Ok) return null;
+            return picked ?? new TaggedObject[0];
+        }
+
+        /// <summary>把要改的对象刷成目标色，并记下它们的原色（取消时按原色还原）。</summary>
+        private static void ApplyColorPreview()
+        {
+            if (_colorObjs == null || _colorObjs.Length == 0 || _colorTargetId <= 0) return;
+
+            foreach (DisplayableObject o in _colorObjs)
+            {
+                if (_colorOrigin.ContainsKey(o.Tag)) continue;
+                int orig = -1;
+                try { orig = o.Color; } catch { }
+                _colorOrigin[o.Tag] = new ColorOrigin { Obj = o, Color = orig };
+            }
+
+            ApplyDisplayModification(_colorObjs, _colorTargetId, -1);
+            Log("  预览改色：选 " + (_colorPicked == null ? 0 : _colorPicked.Length) +
+                " 个（" + DescribePicked(_colorPicked) + "）→ 刷 " + _colorObjs.Length +
+                " 个对象 → 色号 " + _colorTargetId);
+        }
+
         private static void OnColorInit()
         {
             try
             {
-                _colorSelBlock = _colorDialog.TopBlock.FindBlock("colorSelect") as SelectObjectBlock;
-                _colorInfoBlock = _colorDialog.TopBlock.FindBlock("colorInfo") as LabelBlock;
-                Log("  OnInit 取块: colorSelect=" + (_colorSelBlock != null) +
-                    " colorInfo=" + (_colorInfoBlock != null));
+                _colorInfoBlock = _colorDialog.TopBlock.FindBlock("confirmInfo") as LabelBlock;
+                if (_colorInfoBlock == null) { Log("  OnInit: 找不到 confirmInfo 标签块"); return; }
 
-                if (_colorInfoBlock != null)
-                {
-                    // 说明文字运行时才定得下来（颜色名来自配置），所以不写死在 .dlx 里
-                    try
-                    {
-                        _colorInfoBlock.Label =
-                            "目标颜色：" + _colorTargetName + "\r\n" +
-                            "在图形区点选实体 / 片体 / 面或边，选中即预览" +
-                            "（选实体时它的所有面会一起刷，包括之前单独改过色的面）；" +
-                            "点「确定」保留，点「取消」恢复原色。";
-                    }
-                    catch (Exception ex) { Log("  设置说明文字失败（忽略）: " + ex.Message); }
-                }
+                _colorInfoBlock.Label =
+                    "目标颜色：" + _colorTargetName + "\r\n" +
+                    "已选 " + (_colorPicked == null ? 0 : _colorPicked.Length) + " 个对象（" +
+                    DescribePicked(_colorPicked) + "），改色已在上方预览。\r\n" +
+                    "点「确定」保留（之后可按 Ctrl+Z 一步撤销），点「取消」恢复原色。";
 
-                if (_colorSelBlock != null)
-                {
-                    // 和透明化同样要放开过滤，否则图形区点什么都不上选
-                    ApplySelectionFilter(_colorSelBlock);
-
-                    // 打开对话框前已经在图形区选好的对象直接带进来，省一次重新选择
-                    TaggedObject[] pre = GetPickedObjects();
-                    if (pre.Length > 0) _colorSelBlock.SetSelectedObjects(ResolveForColor(pre));
-                }
+                Log("  OnInit 就绪：待提交 " + (_colorObjs == null ? 0 : _colorObjs.Length) + " 个对象");
             }
             catch (Exception ex)
             {
@@ -570,40 +817,60 @@ namespace LYJ
             }
         }
 
-        /// <summary>对话框显示完成：之后的 update 才是用户操作。</summary>
-        private static void OnColorShown()
-        {
-            _colorShown = true;
-            // 带进来的预选对象在 shown 之前不会应用，这里补一次预览
-            PreviewColor(false);
-        }
-
-        private static int OnColorUpdate(UIBlock block)
-        {
-            if (!_colorShown || _colorApplying) return 0;
-            if (block == _colorSelBlock) PreviewColor(false);
-            return 0;
-        }
-
         private static int OnColorOk()
         {
-            if (ReadColorSelection().Length == 0)
-            {
-                UI.GetUI().NXMessageBox.Show("改颜色", NXMessageBox.DialogType.Warning,
-                    "请先选择要改色的对象。\r\n\r\n" +
-                    "可以在图形区直接点实体、片体、面，或在部件导航器里选" +
-                    "「体」/生成它的特征（如 块(1)）。");
-                return 1;       // 非 0 = 不关闭对话框，等用户选完再点确定
-            }
-
-            PreviewColor(false);    // 保险：确保当前选择都已上色
-            return 0;
+            CommitColor();
+            return 0;                 // 0 = 关闭面板
         }
 
         /// <summary>
-        /// 取消：把预览过的对象逐个还原成打开对话框前的颜色。
-        /// 这里**不用**撤销标记回滚（透明化用的那招）—— 预览是"边选边改"，
-        /// 用 UndoToMark 会把期间所有显示修改一起撤掉，和逐个还原互相打架。
+        /// 确定：先静默退掉预览，再在**可见撤销标记**里重刷一遍并 DoUpdate —— Ctrl+Z 一步回原色。
+        /// </summary>
+        private static void CommitColor()
+        {
+            if (_colorObjs == null || _colorObjs.Length == 0 || _colorTargetId <= 0) return;
+
+            Session session = Session.GetSession();
+
+            // ① 静默退掉预览（不刷新界面也能生效，反正紧接着就要重刷）
+            try { RestoreOriginColors(); }
+            catch (Exception ex) { Log("  提交前还原预览失败（忽略）: " + ex.Message); }
+
+            // ② 在可见撤销标记内重新刷色（= 日记账的 SetUndoMark + Apply + DoUpdate）
+            Session.UndoMarkId mark = default(Session.UndoMarkId);
+            bool markOk = false;
+            try
+            {
+                mark = session.SetUndoMark(Session.MarkVisibility.Visible,
+                    "LYJ 改颜色 " + _colorTargetName);
+                markOk = true;
+            }
+            catch (Exception ex) { Log("  建撤销标记失败（忽略）: " + ex.Message); }
+
+            try
+            {
+                ApplyDisplayModification(_colorObjs, _colorTargetId, -1);
+            }
+            catch (Exception ex)
+            {
+                ShowError(UI.GetUI(), ex);
+                return;
+            }
+
+            if (markOk)
+            {
+                try { session.UpdateManager.DoUpdate(mark); }
+                catch (Exception ex) { Log("  DoUpdate 失败（忽略）: " + ex.Message); }
+            }
+
+            Log("  提交改色：刷 " + _colorObjs.Length + " 个对象 → 色号 " + _colorTargetId +
+                "（已放进可见撤销标记，可 Ctrl+Z）");
+        }
+
+        /// <summary>
+        /// 取消：把预览过的对象逐个还原成改色前的颜色。
+        /// **不用**撤销标记回滚（透明化用的那招）—— 预览不在撤销记录里，
+        /// 用 UndoToMark 会连带撤掉用户之前的操作，和逐个还原互相打架。
         /// </summary>
         private static int OnColorCancel()
         {
@@ -612,12 +879,8 @@ namespace LYJ
         }
 
         /// <summary>
-        /// 预览期间把「选择色」临时设成目标色。
-        ///
-        /// NX 选中对象时是用「选择色」整片覆盖的（默认亮橙），改色预览就变成"点谁都是一片橙"，
-        /// 看不出实际改成了什么颜色。选择色是部件级显示偏好（int 色号，可读写），
-        /// 这里临时指向目标色 —— 高亮色和对象色一致，视觉上就等于没有高亮。
-        /// 对话框关闭后由 <see cref="RestoreSelectionColor"/> 还原，不会污染用户设置。
+        /// 预览期间把「选择色」临时指到目标色：否则对象被选中高亮（默认亮橙）整片盖住，
+        /// 看不出改成了什么颜色。部件级偏好，关闭面板后由 <see cref="RestoreSelectionColor"/> 还原。
         /// </summary>
         private static void SetSelectionColorForPreview(Part workPart, int colorId)
         {
@@ -657,83 +920,44 @@ namespace LYJ
             }
         }
 
-        /// <summary>把当前选择刷成目标色；移出选择的对象还原原色。</summary>
-        private static void PreviewColor(bool reportEmpty)
+        /// <summary>日志用：把选中的对象类型拼成一句话（体 / 片体 / 面 / 特征各几个）。</summary>
+        private static string DescribePicked(TaggedObject[] picked)
         {
-            try
+            if (picked == null || picked.Length == 0) return "空";
+
+            int solid = 0, sheet = 0, face = 0, feat = 0, other = 0;
+            foreach (TaggedObject o in picked)
             {
-                if (_colorSelBlock == null || _colorTargetId <= 0) return;
-
-                TaggedObject[] picked = ReadColorSelection();
-                DisplayableObject[] objs = picked.Length == 0
-                    ? new DisplayableObject[0]
-                    : ExpandBodiesWithFaces(ResolveForColor(picked));
-
-                if (objs.Length == 0)
+                Body b = o as Body;
+                if (b != null)
                 {
-                    RestoreOriginColors();      // 选择被清空 → 之前预览过的也退回去
-                    if (reportEmpty)
-                        UI.GetUI().NXMessageBox.Show("改颜色", NXMessageBox.DialogType.Warning,
-                            "请先选择要改色的对象。");
-                    return;
-                }
-
-                _colorApplying = true;
-
-                HashSet<Tag> keep = new HashSet<Tag>();
-                foreach (DisplayableObject o in objs) keep.Add(o.Tag);
-
-                // ① 已经不在选择里、但预览时改过色的：还原
-                List<Tag> drop = null;
-                foreach (KeyValuePair<Tag, ColorOrigin> kv in _colorOrigin)
-                {
-                    if (keep.Contains(kv.Key)) continue;
-                    if (drop == null) drop = new List<Tag>();
-                    drop.Add(kv.Key);
-                }
-                if (drop != null)
-                {
-                    foreach (Tag t in drop)
+                    try
                     {
-                        ColorOrigin co;
-                        if (!_colorOrigin.TryGetValue(t, out co)) continue;
-                        _colorOrigin.Remove(t);
-                        if (co.Obj == null || co.Color < 0) continue;
-                        try { ApplyDisplayModification(new[] { co.Obj }, co.Color, -1); }
-                        catch (Exception ex) { Log("  还原原色失败（忽略）: " + ex.Message); }
+                        if (b.IsSolidBody) solid++;
+                        else sheet++;
                     }
+                    catch { other++; }
+                    continue;
                 }
+                if (o is Face) { face++; continue; }
+                if (o is NXOpen.Features.Feature) { feat++; continue; }
+                other++;
+            }
 
-                // ② 新进选择的对象先记原色，再统一刷目标色
-                foreach (DisplayableObject o in objs)
-                {
-                    if (_colorOrigin.ContainsKey(o.Tag)) continue;
-                    int orig = -1;
-                    try { orig = o.Color; } catch { }
-                    _colorOrigin[o.Tag] = new ColorOrigin { Obj = o, Color = orig };
-                }
-
-                ApplyDisplayModification(objs, _colorTargetId, -1);
-                Log("  预览改色：选 " + picked.Length + " 个 → 实际刷 " + objs.Length +
-                    " 个对象（体+面）→ 色号 " + _colorTargetId);
-            }
-            catch (Exception ex)
-            {
-                ShowError(UI.GetUI(), ex);
-            }
-            finally
-            {
-                _colorApplying = false;
-            }
+            List<string> parts = new List<string>();
+            if (solid > 0) parts.Add("实体 " + solid);
+            if (sheet > 0) parts.Add("片体 " + sheet);
+            if (face > 0) parts.Add("面 " + face);
+            if (feat > 0) parts.Add("特征 " + feat);
+            if (other > 0) parts.Add("其他 " + other);
+            return parts.Count == 0 ? "空" : string.Join(" + ", parts.ToArray());
         }
 
-        /// <summary>把记录里的对象全部还原成原色（取消 / 选择清空时用）。</summary>
+        /// <summary>把记录里的对象全部还原成原色（点「取消」时用）。</summary>
         private static void RestoreOriginColors()
         {
             if (_colorOrigin.Count == 0) return;
 
-            bool wasApplying = _colorApplying;
-            _colorApplying = true;
             try
             {
                 // 按原色分组：展开成"体 + 面"之后可能有几百个对象，
@@ -755,7 +979,7 @@ namespace LYJ
 
                 foreach (KeyValuePair<int, List<DisplayableObject>> kv in byColor)
                 {
-                    try { ApplyDisplayModification(kv.Value.ToArray(), kv.Key, -1); }
+                    try { ApplyDisplayModification(kv.Value.ToArray(), kv.Key, -1, false); }
                     catch (Exception ex) { Log("  还原原色失败（忽略）: " + ex.Message); }
                 }
                 Log("  已还原 " + _colorOrigin.Count + " 个对象的原色（" + byColor.Count + " 组）");
@@ -763,19 +987,7 @@ namespace LYJ
             finally
             {
                 _colorOrigin.Clear();
-                _colorApplying = wasApplying;
             }
-        }
-
-        private static TaggedObject[] ReadColorSelection()
-        {
-            if (_colorSelBlock == null) return new TaggedObject[0];
-            try
-            {
-                TaggedObject[] list = _colorSelBlock.GetSelectedObjects();
-                return list ?? new TaggedObject[0];
-            }
-            catch { return new TaggedObject[0]; }
         }
 
         /// <summary>
@@ -907,15 +1119,23 @@ namespace LYJ
         #region 公共
 
         /// <summary>
-        /// 统一的显示修改：colorId &lt; 0 表示不改颜色，translucency &lt; 0 表示不改透明度。
+        /// 统一的显示修改：colorId &lt; 0 不改颜色，translucency &lt; 0 不改透明度。参数照「编辑对象显示」日记账。
+        ///
+        /// ApplyToAllFaces=true 只对**体**生效（体带动它所有的面；NX 里单独设过色的面不跟随体色，
+        /// 不打开就会出现"整体改了色、某个面还是旧颜色"）；对**面**不生效，只改那一个面。
+        /// **还原原色时必须传 allFaces:false** —— 否则恢复体会把正要单独恢复的面又盖掉。
         /// </summary>
-        private static void ApplyDisplayModification(DisplayableObject[] objs, int colorId, int translucency)
+        private static void ApplyDisplayModification(DisplayableObject[] objs, int colorId, int translucency,
+                                                    bool allFaces = true)
         {
             DisplayModification dm = null;
             try
             {
                 // DisplayModification 没有公共构造函数，必须经 DisplayManager 创建
                 dm = Session.GetSession().DisplayManager.NewDisplayModification();
+                dm.ApplyToAllFaces = allFaces;
+                dm.ApplyToOwningParts = false;
+                dm.EndPointDisplayState = false;
                 if (colorId >= 0) dm.NewColor = colorId;
                 if (translucency >= 0) dm.NewTranslucency = translucency;
                 dm.Apply(objs);
@@ -1004,8 +1224,18 @@ namespace LYJ
         }
 
         /// <summary>
-        /// 改色用：面 / 边 / 体本身就是显示对象，原样改（NX 支持单给某个面上色）；
-        /// 只有特征要换算成它生成的体。
+        /// 改色用：选中什么就改什么，**不再把面提升成体**。
+        ///
+        /// 以前这里恒定"面 → 所属体"，是为了让用户点实体任意一处都整个体改色；但那样一来
+        /// 单面改色就没了。现在改成和原生命令一致：
+        ///   · 类选择默认只勾「实体 + 片体」，所以正常点模型拿到的就是整个体；
+        ///   · 想只改一个面，在类选择里只勾「面」（或直接先在图形区选中面），
+        ///     这里原样透传 → 只改那个面。
+        /// 体的"连同所有面一起刷"交给 DisplayModification.ApplyToAllFaces
+        /// （见 ApplyDisplayModification，照日记账的写法）。
+        ///
+        /// 特征（部件导航器里常选中的是 块(1) 这种）仍然换算成它生成的体：
+        /// 特征不是可显式对象，直接丢给 DisplayModification 会失败。
         /// </summary>
         private static DisplayableObject[] ResolveForColor(TaggedObject[] picked)
         {
